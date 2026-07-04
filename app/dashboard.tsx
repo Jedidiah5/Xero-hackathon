@@ -1,6 +1,7 @@
 "use client";
 
 import { useMemo, useRef, useState } from "react";
+import Link from "next/link";
 import type { BankTransaction, Invoice } from "@/lib/xero/types";
 import type { StripeCharge } from "@/lib/stripe/types";
 import type { ReconcileResult } from "@/lib/agent/reconcile";
@@ -147,7 +148,7 @@ export default function Dashboard({
       {/* Top bar */}
       <header className="sticky top-0 z-40 border-b border-[var(--ring)] glass-panel">
         <div className="mx-auto flex max-w-7xl flex-wrap items-center justify-between gap-4 px-6 py-3">
-          <div className="flex items-center gap-3">
+          <Link href="/" className="flex items-center gap-3">
             <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-gradient-to-br from-[#6c4df6] to-[#8b5cf6] text-lg font-bold text-white shadow-[0_4px_14px_rgba(108,77,246,0.4)]">
               L
             </div>
@@ -159,9 +160,16 @@ export default function Dashboard({
                 Stripe → Xero agent
               </div>
             </div>
-          </div>
+          </Link>
 
           <div className="flex flex-wrap items-center gap-3">
+            <Link
+              href="/connection"
+              className="flex items-center gap-1.5 rounded-full border border-[var(--ring)] bg-white/80 px-3 py-1 font-mono text-[10px] font-bold uppercase tracking-widest text-[var(--muted)] transition-colors hover:border-[#0fa36b] hover:text-[#0fa36b]"
+            >
+              <span className="h-2 w-2 rounded-full bg-[#0fa36b]" />
+              Live connection
+            </Link>
             <IntegrationPill label="Stripe" color="#635bff" />
             <IntegrationPill label="Xero" color="#13b5ea" />
             <span className="hidden rounded-full bg-[var(--accent-soft)] px-3 py-1 font-mono text-[10px] font-bold uppercase tracking-widest text-[#6c4df6] sm:inline">
