@@ -29,7 +29,7 @@ export default function RootLayout({
       lang="en"
       className={`${spaceGrotesk.variable} ${spaceMono.variable} h-full antialiased`}
     >
-      <body className="min-h-full flex flex-col bg-[#faf6ef]">{children}</body>
+      <body className="mesh-bg min-h-full flex flex-col">{children}</body>
     </html>
   );
 }

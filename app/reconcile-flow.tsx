@@ -654,21 +654,40 @@ function FlowInner({
 
   if (failed) return null;
 
+  const running = results.some((r) => r !== null);
+
   return (
-    <section className="mt-10 hidden md:block">
+    <section className="hidden md:block">
+      <div className="flex items-center justify-between border-b border-[var(--ring)] bg-gradient-to-r from-[#faf8f5] to-white px-5 py-3">
+        <div className="flex items-center gap-3">
+          <span className="flex items-center gap-1.5 font-mono text-[10px] font-bold uppercase tracking-widest text-[#635bff]">
+            <span className="h-2 w-2 rounded-full bg-[#635bff]" />
+            Stripe
+          </span>
+          <span className="text-[var(--muted)]">→</span>
+          <span className="flex items-center gap-1.5 font-mono text-[10px] font-bold uppercase tracking-widest text-[#13b5ea]">
+            <span className="h-2 w-2 rounded-full bg-[#13b5ea]" />
+            Xero
+          </span>
+        </div>
+        <span className="font-mono text-[10px] uppercase tracking-widest text-[var(--muted)]">
+          {running ? "Live reconciliation" : "Idle · press Run agent"}
+        </span>
+      </div>
       <div
         ref={containerRef}
-        className="relative h-[62vh] max-h-[640px] min-h-[460px] w-full overflow-hidden rounded-2xl bg-white shadow-[0_2px_16px_rgba(38,34,27,0.06)]"
-      >
-        <div className="pointer-events-none absolute bottom-3 left-4 font-mono text-xs uppercase tracking-widest opacity-50">
-          Agent flow — every node follows the agent&apos;s real decision
+        className="relative h-[58vh] max-h-[580px] min-h-[420px] w-full overflow-hidden bg-gradient-to-b from-[#faf8f5] to-white"
+      />
+      <div className="flex flex-wrap items-center justify-between gap-3 border-t border-[var(--ring)] bg-[#faf8f5]/80 px-5 py-2.5">
+        <span className="font-mono text-[10px] uppercase tracking-widest text-[var(--muted)]">
+          Every node follows the agent&apos;s real decision
+        </span>
+        <div className="flex flex-wrap gap-x-4 gap-y-1 font-mono text-[10px] text-[var(--muted)]">
+          <LegendDot color={MATCHED} label="matched" />
+          <LegendDot color="#d97706" label="fee split" />
+          <LegendDot color={FLAGGED} label="flagged" />
+          <LegendDot color={TEXT_DIM} label="duplicate" hollow />
         </div>
-      </div>
-      <div className="mt-2 flex flex-wrap gap-x-6 gap-y-1 font-mono text-xs opacity-70">
-        <LegendDot color={MATCHED} label="matched · paid" />
-        <LegendDot color={FEE} label="fee split to expense" />
-        <LegendDot color={FLAGGED} label="flagged for review" />
-        <LegendDot color={TEXT_DIM} label="duplicate · skipped" hollow />
       </div>
     </section>
   );

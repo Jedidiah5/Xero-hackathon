@@ -6,14 +6,24 @@ import type { StripeCharge } from "@/lib/stripe/types";
 import type { ReconcileResult } from "@/lib/agent/reconcile";
 import ReconcileFlow from "./reconcile-flow";
 
-const REVEAL_MS = 750; // stagger between row outcomes — legibility over speed
+const REVEAL_MS = 750;
 
-// Light theme palette (matches globals.css + the 3D flow)
-const INK = "#26221b";
+const INK = "#1c1915";
+const MUTED = "#6b6458";
 const ACCENT = "#6c4df6";
 const MATCHED = "#0fa36b";
 const FEE = "#d97706";
 const FLAGGED = "#e8553a";
+
+const AVATAR_PALETTE = [
+  "#6c4df6",
+  "#0fa36b",
+  "#0891b2",
+  "#d97706",
+  "#e8553a",
+  "#db2777",
+  "#4f46e5",
+];
 
 const gbp = (pence: number) =>
   (pence / 100).toLocaleString("en-GB", { style: "currency", currency: "GBP" });
@@ -22,6 +32,23 @@ const gbpPounds = (pounds: number) =>
 
 type QueueAction = "approved" | "reassigned";
 
+function initials(name: string | null) {
+  if (!name) return "?";
+  return name
+    .split(/\s+/)
+    .slice(0, 2)
+    .map((w) => w[0])
+    .join("")
+    .toUpperCase();
+}
+
+function avatarColor(name: string | null) {
+  const s = name ?? "?";
+  let h = 0;
+  for (let i = 0; i < s.length; i++) h = (h + s.charCodeAt(i) * 17) % AVATAR_PALETTE.length;
+  return AVATAR_PALETTE[h];
+}
+
 export default function Dashboard({
   initialPayments,
   initialInvoices,
@@ -29,7 +56,6 @@ export default function Dashboard({
   initialPayments: StripeCharge[];
   initialInvoices: Invoice[];
 }) {
-  // results[i] = null until the agent's outcome for payment i is revealed.
   const [results, setResults] = useState<(ReconcileResult | null)[]>(() =>
     initialPayments.map(() => null)
   );
@@ -52,8 +78,9 @@ export default function Dashboard({
     ["PARTIAL", "NO_MATCH"].includes(r.decision.type)
   );
   const skippedItems = revealed.filter((r) => r.decision.type === "DUPLICATE");
+  const reconciled = matchedCount + feeSplitCount;
+  const progress = hasRun ? 100 : running ? Math.round((revealed.length / initialPayments.length) * 100) : 0;
 
-  // An invoice is settled by both MATCH and FEE_SPLIT outcomes.
   const paidInvoiceIds = useMemo(
     () =>
       new Set(
@@ -68,8 +95,6 @@ export default function Dashboard({
     [revealed]
   );
 
-  // Fee expenses appear in sync with their payment's reveal: the mock stores
-  // the Stripe charge id as the bank transaction's Reference.
   const revealedFeeSplitChargeIds = useMemo(
     () =>
       new Set(
@@ -118,254 +143,531 @@ export default function Dashboard({
   };
 
   return (
-    <main className="min-h-screen px-8 py-10 text-[#26221b]">
-      {/* Header */}
-      <div className="flex flex-wrap items-end justify-between gap-6">
-        <div>
-          <h1 className="font-sans text-4xl font-bold tracking-tight">
-            Ledger<span className="text-[#6c4df6]">.</span>
-          </h1>
-          <p className="mt-1 font-mono text-sm opacity-60">
-            AI reconciliation agent · Stripe → Xero · provider: mock
-          </p>
-        </div>
-        <button
-          onClick={run}
-          disabled={running}
-          className="rounded-full bg-[#6c4df6] px-8 py-3 font-mono text-sm font-bold uppercase tracking-widest text-white shadow-[0_6px_20px_rgba(108,77,246,0.35)] transition-all hover:-translate-y-0.5 hover:bg-[#5a3ded] hover:shadow-[0_8px_24px_rgba(108,77,246,0.45)] disabled:translate-y-0 disabled:opacity-50 disabled:shadow-none"
-        >
-          {running ? "Running…" : hasRun ? "Replay" : "Run agent"}
-        </button>
-      </div>
-
-      {/* Three.js hero — additive layer driven by the same `results` the rows
-          render, so the flow and the numbers can never disagree. Removable
-          without touching Stage 3. */}
-      <ReconcileFlow
-        payments={initialPayments}
-        invoices={initialInvoices}
-        results={results}
-      />
-
-      {/* Stat row */}
-      <div className="mt-10 grid grid-cols-2 gap-4 md:grid-cols-4">
-        <StatCard
-          label="Incoming"
-          value={initialPayments.length}
-          color={INK}
-          sub={skippedItems.length > 0 ? `${skippedItems.length} duplicate skipped` : undefined}
-        />
-        <StatCard label="Reconciled" value={matchedCount + feeSplitCount} color={MATCHED} />
-        <StatCard label="Fees split" value={feeSplitCount} color={FEE} />
-        <StatCard label="Flagged" value={flaggedItems.length} color={FLAGGED} />
-      </div>
-
-      {/* Payment list */}
-      <section className="mt-12">
-        <h2 className="font-sans text-xl font-bold">Incoming payments</h2>
-        <div className="mt-4 overflow-hidden rounded-2xl bg-white shadow-[0_2px_16px_rgba(38,34,27,0.06)]">
-          {initialPayments.map((p, i) => {
-            const decision = results[i]?.decision ?? null;
-            const isDuplicate = decision?.type === "DUPLICATE";
-            return (
-              <div
-                key={`${p.id}-${i}`}
-                className="grid grid-cols-[2rem_1fr_auto] items-baseline gap-x-6 gap-y-1 border-b border-[#26221b]/8 px-6 py-4 transition-opacity last:border-b-0 md:grid-cols-[2rem_14rem_8rem_8rem_1fr]"
-                style={isDuplicate ? { opacity: 0.45 } : undefined}
-              >
-                <span className="font-mono text-sm opacity-40">{i + 1}</span>
-                <span className="font-sans text-base font-medium">
-                  {p.billing_details.name ?? "Unknown sender"}
-                </span>
-                <span className="font-mono text-base">{gbp(p.amount)}</span>
-                <span className="hidden font-mono text-sm opacity-50 md:block">
-                  {p.metadata.invoice_number ?? "no ref"}
-                </span>
-                <span className="col-span-3 md:col-span-1">
-                  {decision === null ? (
-                    <StatusChip label="Pending" color={INK} dim />
-                  ) : decision.type === "MATCH" ? (
-                    <Outcome chip="Matched" color={MATCHED} reason={decision.reason} />
-                  ) : decision.type === "FEE_SPLIT" ? (
-                    <Outcome chip="Fee split" color={FEE} reason={decision.reason} />
-                  ) : decision.type === "PARTIAL" ? (
-                    <Outcome chip="Partial" color={FLAGGED} reason={decision.reason} />
-                  ) : decision.type === "NO_MATCH" ? (
-                    <Outcome chip="No match" color={FLAGGED} reason={decision.reason} />
-                  ) : (
-                    <Outcome chip="Skipped · duplicate" color={INK} reason={decision.reason} dashed />
-                  )}
-                </span>
-              </div>
-            );
-          })}
-        </div>
-      </section>
-
-      {/* Review queue — the human-in-the-loop step incumbents leave manual */}
-      <section className="mt-12">
-        <h2 className="font-sans text-xl font-bold">
-          Review queue{" "}
-          <span className="font-mono text-sm font-normal opacity-50">
-            flagged by the agent · human decides
-          </span>
-        </h2>
-        <div className="mt-4 space-y-3">
-          {flaggedItems.length === 0 ? (
-            <div className="rounded-2xl bg-white px-6 py-4 font-mono text-sm opacity-40 shadow-[0_2px_16px_rgba(38,34,27,0.06)]">
-              — nothing flagged yet
+    <div className="min-h-screen">
+      {/* Top bar */}
+      <header className="sticky top-0 z-40 border-b border-[var(--ring)] glass-panel">
+        <div className="mx-auto flex max-w-7xl flex-wrap items-center justify-between gap-4 px-6 py-3">
+          <div className="flex items-center gap-3">
+            <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-gradient-to-br from-[#6c4df6] to-[#8b5cf6] text-lg font-bold text-white shadow-[0_4px_14px_rgba(108,77,246,0.4)]">
+              L
             </div>
-          ) : (
-            flaggedItems.map((item) => {
-              const acted = queueActions[item.index];
-              return (
-                <div
-                  key={item.index}
-                  className="rounded-2xl border-l-4 border-[#e8553a] bg-[#e8553a]/6 p-5 shadow-[0_2px_16px_rgba(38,34,27,0.05)]"
-                >
-                  <div className="flex flex-wrap items-baseline justify-between gap-x-6 gap-y-2">
-                    <div>
-                      <span className="font-sans text-base font-medium">
-                        {item.payment.billing_details.name ?? "Unknown sender"}
-                      </span>
-                      <span className="ml-4 font-mono text-base">{gbp(item.payment.amount)}</span>
-                      <StatusChip
-                        label={item.decision.type === "PARTIAL" ? "Partial" : "No match"}
-                        color={FLAGGED}
-                        className="ml-4"
-                      />
-                    </div>
-                    {acted ? (
-                      <span className="font-mono text-xs font-bold uppercase tracking-widest text-[#6c4df6]">
-                        {acted === "approved" ? "Approved ✓" : "Reassigned →"}
-                      </span>
-                    ) : (
-                      <div className="flex gap-2">
-                        <QueueButton
-                          label="Approve"
-                          onClick={() =>
-                            setQueueActions((prev) => ({ ...prev, [item.index]: "approved" }))
-                          }
-                        />
-                        <QueueButton
-                          label="Reassign"
-                          onClick={() =>
-                            setQueueActions((prev) => ({ ...prev, [item.index]: "reassigned" }))
-                          }
-                        />
-                      </div>
-                    )}
-                  </div>
-                  <p className="mt-2 font-mono text-xs text-[#c8462e]">{item.decision.reason}</p>
-                </div>
-              );
-            })
-          )}
+            <div>
+              <div className="font-sans text-lg font-bold tracking-tight">
+                Ledger<span className="text-[#6c4df6]">.</span>
+              </div>
+              <div className="font-mono text-[10px] uppercase tracking-widest text-[var(--muted)]">
+                Stripe → Xero agent
+              </div>
+            </div>
+          </div>
 
-          {/* Duplicates are not "needs review" — they're handled by being ignored */}
-          {skippedItems.map((item) => (
-            <div
-              key={item.index}
-              className="rounded-2xl border border-dashed border-[#26221b]/25 bg-white/60 p-5 opacity-70"
+          <div className="flex flex-wrap items-center gap-3">
+            <IntegrationPill label="Stripe" color="#635bff" />
+            <IntegrationPill label="Xero" color="#13b5ea" />
+            <span className="hidden rounded-full bg-[var(--accent-soft)] px-3 py-1 font-mono text-[10px] font-bold uppercase tracking-widest text-[#6c4df6] sm:inline">
+              mock mode
+            </span>
+            {running && (
+              <span className="flex items-center gap-2 rounded-full bg-[#ede9fe] px-3 py-1 font-mono text-[10px] font-bold uppercase tracking-widest text-[#6c4df6]">
+                <span className="live-dot h-2 w-2 rounded-full bg-[#6c4df6]" />
+                Agent running
+              </span>
+            )}
+            <button
+              onClick={run}
+              disabled={running}
+              className="group relative overflow-hidden rounded-xl bg-gradient-to-r from-[#6c4df6] to-[#7c3aed] px-6 py-2.5 font-mono text-xs font-bold uppercase tracking-widest text-white shadow-[0_4px_20px_rgba(108,77,246,0.4)] transition-all hover:-translate-y-0.5 hover:shadow-[0_8px_28px_rgba(108,77,246,0.5)] disabled:translate-y-0 disabled:opacity-50 disabled:shadow-none"
             >
-              <div className="flex flex-wrap items-baseline gap-x-6 gap-y-1">
-                <span className="font-sans text-base">
-                  {item.payment.billing_details.name ?? "Unknown sender"}
-                </span>
-                <span className="font-mono text-base">{gbp(item.payment.amount)}</span>
-                <StatusChip label="Skipped" color={INK} dim />
+              <span className="relative z-10">
+                {running ? "Running…" : hasRun ? "↺ Replay" : "▶ Run agent"}
+              </span>
+              <span className="absolute inset-0 -translate-x-full bg-gradient-to-r from-transparent via-white/20 to-transparent transition-transform duration-700 group-hover:translate-x-full" />
+            </button>
+          </div>
+        </div>
+      </header>
+
+      <main className="mx-auto max-w-7xl px-6 py-8">
+        {/* Hero intro */}
+        <section className="mb-8 flex flex-col gap-6 lg:flex-row lg:items-end lg:justify-between">
+          <div className="max-w-2xl">
+            <p className="font-mono text-xs font-bold uppercase tracking-[0.2em] text-[#6c4df6]">
+              AI reconciliation
+            </p>
+            <h1 className="mt-2 font-sans text-3xl font-bold leading-tight tracking-tight md:text-4xl">
+              Match payments to invoices.
+              <br />
+              <span className="text-[var(--muted)]">Split fees. Flag the mess.</span>
+            </h1>
+            <p className="mt-3 max-w-lg text-base leading-relaxed text-[var(--muted)]">
+              Six Stripe payments hit your bank feed. The agent finds the open Xero invoice,
+              books the Stripe fee, and routes ambiguity to you — not a guess.
+            </p>
+          </div>
+
+          {(running || hasRun) && (
+            <div className="glass-panel w-full max-w-xs rounded-2xl p-4 lg:w-72">
+              <div className="flex items-center justify-between font-mono text-[10px] uppercase tracking-widest text-[var(--muted)]">
+                <span>Run progress</span>
+                <span className="font-bold text-[#6c4df6]">{progress}%</span>
               </div>
-              <p className="mt-2 font-mono text-xs opacity-70">{item.decision.reason}</p>
+              <div className="mt-2 h-2 overflow-hidden rounded-full bg-[#ede9fe]">
+                <div
+                  className="h-full rounded-full bg-gradient-to-r from-[#6c4df6] to-[#0fa36b] transition-all duration-500 ease-out"
+                  style={{ width: `${progress}%` }}
+                />
+              </div>
+              <p className="mt-2 font-mono text-[10px] text-[var(--muted)]">
+                {revealed.length} of {initialPayments.length} decisions revealed
+              </p>
             </div>
-          ))}
-        </div>
-      </section>
-
-      {/* Xero invoices */}
-      <section className="mt-12">
-        <h2 className="font-sans text-xl font-bold">
-          Xero invoices{" "}
-          <span className="font-mono text-sm font-normal opacity-50">
-            GET /Invoices · cached once per run
-          </span>
-        </h2>
-        <div className="mt-4 overflow-hidden rounded-2xl bg-white shadow-[0_2px_16px_rgba(38,34,27,0.06)]">
-          {initialInvoices.map((inv) => {
-            const paid = paidInvoiceIds.has(inv.InvoiceID);
-            return (
-              <div
-                key={inv.InvoiceID}
-                className="grid grid-cols-[8rem_1fr_8rem_8rem_auto] items-baseline gap-x-6 border-b border-[#26221b]/8 px-6 py-3 last:border-b-0"
-              >
-                <span className="font-mono text-sm">{inv.InvoiceNumber}</span>
-                <span className="font-sans text-base">{inv.Contact.Name}</span>
-                <span className="font-mono text-sm">{gbpPounds(inv.Total)}</span>
-                <span className="font-mono text-sm opacity-60">
-                  due {paid ? gbpPounds(0) : gbpPounds(inv.AmountDue)}
-                </span>
-                {paid ? (
-                  <StatusChip label="Paid ✓" color={MATCHED} />
-                ) : (
-                  <StatusChip label="Open" color={INK} dim />
-                )}
-              </div>
-            );
-          })}
-        </div>
-      </section>
-
-      {/* Fee expenses — the split-out Stripe fees, booked as spend money */}
-      <section className="mt-12">
-        <h2 className="font-sans text-xl font-bold">
-          Fee expenses{" "}
-          <span className="font-mono text-sm font-normal opacity-50">
-            POST /BankTransactions · spend money
-          </span>
-        </h2>
-        <div className="mt-4 overflow-hidden rounded-2xl bg-white shadow-[0_2px_16px_rgba(38,34,27,0.06)]">
-          {visibleTxns.length === 0 ? (
-            <div className="px-6 py-4 font-mono text-sm opacity-40">— none booked yet</div>
-          ) : (
-            visibleTxns.map((bt) => (
-              <div
-                key={bt.BankTransactionID}
-                className="grid grid-cols-[1fr_10rem_8rem_auto] items-baseline gap-x-6 border-b border-[#26221b]/8 px-6 py-3 last:border-b-0"
-              >
-                <span className="font-sans text-base">{bt.LineItems[0].Description}</span>
-                <span className="font-mono text-sm opacity-60">
-                  {bt.LineItems[0].AccountCode} · Bank Fees
-                </span>
-                <span className="font-mono text-sm font-bold text-[#d97706]">
-                  {gbpPounds(bt.Total)}
-                </span>
-                <StatusChip label="Booked" color={FEE} />
-              </div>
-            ))
           )}
+        </section>
+
+        {/* 3D flow — gradient frame */}
+        <div className="gradient-ring mb-8 hidden md:block">
+          <div className="gradient-ring-inner">
+            <ReconcileFlow
+              payments={initialPayments}
+              invoices={initialInvoices}
+              results={results}
+            />
+          </div>
         </div>
-      </section>
-    </main>
+
+        {/* Stats bento */}
+        <div className="mb-10 grid grid-cols-2 gap-4 lg:grid-cols-4">
+          <StatCard
+            label="Incoming"
+            value={initialPayments.length}
+            icon="↓"
+            gradient="from-[#ede9fe] to-white"
+            accent={ACCENT}
+            sub={skippedItems.length > 0 ? `${skippedItems.length} duplicate skipped` : "webhooks today"}
+          />
+          <StatCard
+            label="Reconciled"
+            value={reconciled}
+            icon="✓"
+            gradient="from-[#d1fae5] to-white"
+            accent={MATCHED}
+            sub={reconciled > 0 ? "marked paid in Xero" : "waiting for agent"}
+          />
+          <StatCard
+            label="Fees split"
+            value={feeSplitCount}
+            icon="◎"
+            gradient="from-[#fef3c7] to-white"
+            accent={FEE}
+            sub={feeSplitCount > 0 ? "booked to expense" : "no fees yet"}
+          />
+          <StatCard
+            label="Flagged"
+            value={flaggedItems.length}
+            icon="!"
+            gradient="from-[#fee2e2] to-white"
+            accent={FLAGGED}
+            sub={flaggedItems.length > 0 ? "needs your call" : "queue clear"}
+          />
+        </div>
+
+        {/* Main grid: payments + review */}
+        <div className="grid gap-8 lg:grid-cols-5">
+          <section className="lg:col-span-3">
+            <SectionHeader
+              title="Incoming payments"
+              subtitle="Stripe charges · agent decides each one"
+              badge={`${initialPayments.length} total`}
+            />
+            <div className="glass-panel overflow-hidden rounded-2xl">
+              <div className="hidden border-b border-[var(--ring)] bg-[#faf8f5]/80 px-5 py-2.5 font-mono text-[10px] uppercase tracking-widest text-[var(--muted)] md:grid md:grid-cols-[2.5rem_1fr_6rem_6rem_1fr] md:gap-4">
+                <span>#</span>
+                <span>Customer</span>
+                <span>Amount</span>
+                <span>Reference</span>
+                <span>Outcome</span>
+              </div>
+              {initialPayments.map((p, i) => {
+                const decision = results[i]?.decision ?? null;
+                const isDuplicate = decision?.type === "DUPLICATE";
+                const name = p.billing_details.name ?? "Unknown sender";
+                return (
+                  <div
+                    key={`${p.id}-${i}`}
+                    className={`border-b border-[var(--ring)] px-5 py-4 transition-all last:border-b-0 hover:bg-[#faf8f5]/60 ${
+                      decision ? "animate-in" : ""
+                    }`}
+                    style={
+                      isDuplicate
+                        ? { opacity: 0.5 }
+                        : decision && decision.type !== "DUPLICATE"
+                          ? { background: "rgba(250,248,245,0.5)" }
+                          : undefined
+                    }
+                  >
+                    <div className="grid items-center gap-3 md:grid-cols-[2.5rem_1fr_6rem_6rem_1fr] md:gap-4">
+                      <span className="font-mono text-xs text-[var(--muted)]">{i + 1}</span>
+                      <div className="flex items-center gap-3">
+                        <Avatar name={name} />
+                        <span className="font-sans text-sm font-semibold">{name}</span>
+                      </div>
+                      <span className="font-mono text-sm font-bold">{gbp(p.amount)}</span>
+                      <span className="font-mono text-xs text-[var(--muted)]">
+                        {p.metadata.invoice_number ?? "—"}
+                      </span>
+                      <div>
+                        {decision === null ? (
+                          <StatusChip label="Pending" color={MUTED} dim />
+                        ) : decision.type === "MATCH" ? (
+                          <Outcome chip="Matched" color={MATCHED} reason={decision.reason} />
+                        ) : decision.type === "FEE_SPLIT" ? (
+                          <Outcome chip="Fee split" color={FEE} reason={decision.reason} />
+                        ) : decision.type === "PARTIAL" ? (
+                          <Outcome chip="Partial" color={FLAGGED} reason={decision.reason} />
+                        ) : decision.type === "NO_MATCH" ? (
+                          <Outcome chip="No match" color={FLAGGED} reason={decision.reason} />
+                        ) : (
+                          <Outcome
+                            chip="Duplicate"
+                            color={MUTED}
+                            reason={decision.reason}
+                            dashed
+                          />
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </section>
+
+          <section className="lg:col-span-2">
+            <SectionHeader
+              title="Review queue"
+              subtitle="Human-in-the-loop · agent won't guess"
+              badge={flaggedItems.length > 0 ? `${flaggedItems.length} open` : "empty"}
+              accent={FLAGGED}
+            />
+            <div className="space-y-3">
+              {flaggedItems.length === 0 && skippedItems.length === 0 ? (
+                <EmptyState
+                  emoji="✨"
+                  title="Nothing flagged"
+                  text="Run the agent — partial payments and unknown senders land here."
+                />
+              ) : (
+                <>
+                  {flaggedItems.map((item) => {
+                    const acted = queueActions[item.index];
+                    const name = item.payment.billing_details.name ?? "Unknown sender";
+                    return (
+                      <div
+                        key={item.index}
+                        className="animate-in overflow-hidden rounded-2xl border border-[#fecaca] bg-gradient-to-br from-[#fff5f5] to-white shadow-[var(--shadow-sm)]"
+                      >
+                        <div className="h-1 bg-gradient-to-r from-[#e8553a] to-[#f97316]" />
+                        <div className="p-5">
+                          <div className="flex items-start justify-between gap-3">
+                            <div className="flex items-center gap-3">
+                              <Avatar name={name} size="lg" />
+                              <div>
+                                <div className="font-sans text-sm font-bold">{name}</div>
+                                <div className="font-mono text-lg font-bold text-[#e8553a]">
+                                  {gbp(item.payment.amount)}
+                                </div>
+                              </div>
+                            </div>
+                            <StatusChip
+                              label={item.decision.type === "PARTIAL" ? "Partial" : "No match"}
+                              color={FLAGGED}
+                            />
+                          </div>
+                          <p className="mt-3 rounded-xl bg-white/80 px-3 py-2 font-mono text-[11px] leading-relaxed text-[#b45309]">
+                            {item.decision.reason}
+                          </p>
+                          <div className="mt-4 flex gap-2">
+                            {acted ? (
+                              <span className="rounded-xl bg-[#ede9fe] px-4 py-2 font-mono text-[10px] font-bold uppercase tracking-widest text-[#6c4df6]">
+                                {acted === "approved" ? "Approved ✓" : "Reassigned →"}
+                              </span>
+                            ) : (
+                              <>
+                                <QueueButton
+                                  label="Approve"
+                                  primary
+                                  onClick={() =>
+                                    setQueueActions((prev) => ({
+                                      ...prev,
+                                      [item.index]: "approved",
+                                    }))
+                                  }
+                                />
+                                <QueueButton
+                                  label="Reassign"
+                                  onClick={() =>
+                                    setQueueActions((prev) => ({
+                                      ...prev,
+                                      [item.index]: "reassigned",
+                                    }))
+                                  }
+                                />
+                              </>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })}
+
+                  {skippedItems.map((item) => (
+                    <div
+                      key={item.index}
+                      className="animate-in rounded-2xl border border-dashed border-[var(--ring)] bg-white/60 p-4"
+                    >
+                      <div className="flex items-center gap-3">
+                        <Avatar
+                          name={item.payment.billing_details.name ?? "?"}
+                          dim
+                        />
+                        <div className="flex-1">
+                          <div className="flex flex-wrap items-center gap-2">
+                            <span className="text-sm font-semibold">
+                              {item.payment.billing_details.name ?? "Unknown sender"}
+                            </span>
+                            <span className="font-mono text-sm">{gbp(item.payment.amount)}</span>
+                            <StatusChip label="Skipped" color={MUTED} dim dashed />
+                          </div>
+                          <p className="mt-1 font-mono text-[10px] text-[var(--muted)]">
+                            {item.decision.reason}
+                          </p>
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </>
+              )}
+            </div>
+          </section>
+        </div>
+
+        {/* Bottom grid: invoices + fees */}
+        <div className="mt-10 grid gap-8 lg:grid-cols-2">
+          <section>
+            <SectionHeader
+              title="Xero invoices"
+              subtitle="GET /Invoices · cached once per run"
+              badge={`${paidInvoiceIds.size} paid`}
+              accent={MATCHED}
+            />
+            <div className="grid gap-3 sm:grid-cols-2">
+              {initialInvoices.map((inv) => {
+                const paid = paidInvoiceIds.has(inv.InvoiceID);
+                return (
+                  <div
+                    key={inv.InvoiceID}
+                    className={`glass-panel rounded-2xl p-4 transition-all ${
+                      paid
+                        ? "ring-2 ring-[#0fa36b]/30 bg-gradient-to-br from-[#ecfdf5] to-white"
+                        : "hover:shadow-[var(--shadow-md)]"
+                    }`}
+                  >
+                    <div className="flex items-start justify-between gap-2">
+                      <div>
+                        <div className="font-mono text-xs font-bold text-[var(--muted)]">
+                          {inv.InvoiceNumber}
+                        </div>
+                        <div className="mt-1 font-sans text-sm font-semibold">
+                          {inv.Contact.Name}
+                        </div>
+                      </div>
+                      {paid ? (
+                        <span className="flex h-7 w-7 items-center justify-center rounded-full bg-[#0fa36b] text-sm text-white">
+                          ✓
+                        </span>
+                      ) : (
+                        <span className="rounded-full bg-[#f4f0e8] px-2 py-0.5 font-mono text-[9px] font-bold uppercase tracking-widest text-[var(--muted)]">
+                          Open
+                        </span>
+                      )}
+                    </div>
+                    <div className="mt-3 flex items-end justify-between">
+                      <span className="font-mono text-xl font-bold">{gbpPounds(inv.Total)}</span>
+                      <span className="font-mono text-[10px] text-[var(--muted)]">
+                        due {paid ? gbpPounds(0) : gbpPounds(inv.AmountDue)}
+                      </span>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </section>
+
+          <section>
+            <SectionHeader
+              title="Fee expenses"
+              subtitle="POST /BankTransactions · spend money"
+              badge={visibleTxns.length > 0 ? `${visibleTxns.length} booked` : "none"}
+              accent={FEE}
+            />
+            {visibleTxns.length === 0 ? (
+              <EmptyState
+                emoji="💳"
+                title="No fees booked yet"
+                text="Payment #2 splits the Stripe fee into a bank expense line."
+              />
+            ) : (
+              <div className="space-y-3">
+                {visibleTxns.map((bt) => (
+                  <div
+                    key={bt.BankTransactionID}
+                    className="animate-in overflow-hidden rounded-2xl border border-[#fde68a] bg-gradient-to-br from-[#fffbeb] to-white shadow-[var(--shadow-sm)]"
+                  >
+                    <div className="h-1 bg-gradient-to-r from-[#d97706] to-[#f59e0b]" />
+                    <div className="flex items-center justify-between gap-4 p-5">
+                      <div>
+                        <div className="font-sans text-sm font-semibold">
+                          {bt.LineItems[0].Description}
+                        </div>
+                        <div className="mt-1 font-mono text-[10px] text-[var(--muted)]">
+                          {bt.LineItems[0].AccountCode} · Bank Fees
+                        </div>
+                      </div>
+                      <div className="text-right">
+                        <div className="font-mono text-xl font-bold text-[#d97706]">
+                          {gbpPounds(bt.Total)}
+                        </div>
+                        <StatusChip label="Booked" color={FEE} className="mt-1" />
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </section>
+        </div>
+      </main>
+    </div>
+  );
+}
+
+/* ── UI components ─────────────────────────────────────────────── */
+
+function IntegrationPill({ label, color }: { label: string; color: string }) {
+  return (
+    <span className="flex items-center gap-1.5 rounded-full border border-[var(--ring)] bg-white/80 px-3 py-1 font-mono text-[10px] font-bold uppercase tracking-widest">
+      <span className="h-2 w-2 rounded-full" style={{ background: color }} />
+      {label}
+    </span>
+  );
+}
+
+function SectionHeader({
+  title,
+  subtitle,
+  badge,
+  accent = INK,
+}: {
+  title: string;
+  subtitle: string;
+  badge: string;
+  accent?: string;
+}) {
+  return (
+    <div className="mb-4 flex flex-wrap items-end justify-between gap-3">
+      <div>
+        <h2 className="font-sans text-lg font-bold">{title}</h2>
+        <p className="mt-0.5 font-mono text-[10px] uppercase tracking-widest text-[var(--muted)]">
+          {subtitle}
+        </p>
+      </div>
+      <span
+        className="rounded-full px-3 py-1 font-mono text-[10px] font-bold uppercase tracking-widest"
+        style={{ background: `${accent}18`, color: accent }}
+      >
+        {badge}
+      </span>
+    </div>
+  );
+}
+
+function Avatar({
+  name,
+  size = "md",
+  dim,
+}: {
+  name: string;
+  size?: "md" | "lg";
+  dim?: boolean;
+}) {
+  const color = avatarColor(name);
+  const sz = size === "lg" ? "h-11 w-11 text-sm" : "h-8 w-8 text-[10px]";
+  return (
+    <div
+      className={`${sz} flex shrink-0 items-center justify-center rounded-xl font-bold text-white shadow-sm`}
+      style={{
+        background: dim ? "#c4bdb0" : `linear-gradient(135deg, ${color}, ${color}cc)`,
+      }}
+    >
+      {initials(name)}
+    </div>
   );
 }
 
 function StatCard({
   label,
   value,
-  color,
+  icon,
+  gradient,
+  accent,
   sub,
 }: {
   label: string;
   value: number;
-  color: string;
-  sub?: string;
+  icon: string;
+  gradient: string;
+  accent: string;
+  sub: string;
 }) {
   return (
-    <div className="rounded-2xl bg-white p-5 shadow-[0_2px_16px_rgba(38,34,27,0.06)]">
-      <div className="font-mono text-xs uppercase tracking-widest opacity-50">{label}</div>
-      <div className="mt-2 font-mono text-5xl font-bold" style={{ color }}>
+    <div
+      className={`glass-panel relative overflow-hidden rounded-2xl bg-gradient-to-br ${gradient} p-5 transition-transform hover:-translate-y-0.5 hover:shadow-[var(--shadow-md)]`}
+    >
+      <div className="flex items-start justify-between">
+        <span className="font-mono text-[10px] font-bold uppercase tracking-widest text-[var(--muted)]">
+          {label}
+        </span>
+        <span
+          className="flex h-8 w-8 items-center justify-center rounded-lg text-sm font-bold text-white"
+          style={{ background: accent }}
+        >
+          {icon}
+        </span>
+      </div>
+      <div className="mt-3 font-mono text-4xl font-bold" style={{ color: accent }}>
         {value}
       </div>
-      {sub && <div className="mt-1 font-mono text-xs opacity-45">{sub}</div>}
+      <p className="mt-1 font-mono text-[10px] text-[var(--muted)]">{sub}</p>
+    </div>
+  );
+}
+
+function EmptyState({
+  emoji,
+  title,
+  text,
+}: {
+  emoji: string;
+  title: string;
+  text: string;
+}) {
+  return (
+    <div className="glass-panel rounded-2xl px-6 py-10 text-center">
+      <div className="text-3xl">{emoji}</div>
+      <div className="mt-2 font-sans text-sm font-bold">{title}</div>
+      <p className="mx-auto mt-1 max-w-xs font-mono text-[11px] leading-relaxed text-[var(--muted)]">
+        {text}
+      </p>
     </div>
   );
 }
@@ -382,12 +684,12 @@ function Outcome({
   dashed?: boolean;
 }) {
   return (
-    <span className="flex flex-wrap items-baseline gap-x-3">
+    <div className="space-y-1">
       <StatusChip label={chip} color={color} dashed={dashed} />
-      <span className="font-mono text-xs" style={{ color, opacity: dashed ? 0.7 : 1 }}>
+      <p className="font-mono text-[10px] leading-snug" style={{ color }}>
         {reason}
-      </span>
-    </span>
+      </p>
+    </div>
   );
 }
 
@@ -406,12 +708,12 @@ function StatusChip({
 }) {
   return (
     <span
-      className={`inline-block rounded-full border px-3 py-0.5 font-mono text-xs font-bold uppercase tracking-widest ${className ?? ""}`}
+      className={`inline-block rounded-full border px-2.5 py-0.5 font-mono text-[9px] font-bold uppercase tracking-widest ${className ?? ""}`}
       style={{
         color,
-        borderColor: `${color}66`,
-        background: dim ? "transparent" : `${color}14`,
-        opacity: dim ? 0.4 : 1,
+        borderColor: `${color}${dim ? "44" : "55"}`,
+        background: dim ? "transparent" : `${color}16`,
+        opacity: dim ? 0.55 : 1,
         borderStyle: dashed ? "dashed" : "solid",
       }}
     >
@@ -420,11 +722,23 @@ function StatusChip({
   );
 }
 
-function QueueButton({ label, onClick }: { label: string; onClick: () => void }) {
+function QueueButton({
+  label,
+  onClick,
+  primary,
+}: {
+  label: string;
+  onClick: () => void;
+  primary?: boolean;
+}) {
   return (
     <button
       onClick={onClick}
-      className="rounded-full border border-[#26221b]/25 bg-white px-4 py-1.5 font-mono text-xs font-bold uppercase tracking-widest transition-colors hover:border-[#6c4df6] hover:text-[#6c4df6]"
+      className={
+        primary
+          ? "rounded-xl bg-[#6c4df6] px-4 py-2 font-mono text-[10px] font-bold uppercase tracking-widest text-white shadow-[0_4px_12px_rgba(108,77,246,0.35)] transition-all hover:bg-[#5a3ded]"
+          : "rounded-xl border border-[var(--ring)] bg-white px-4 py-2 font-mono text-[10px] font-bold uppercase tracking-widest transition-all hover:border-[#6c4df6] hover:text-[#6c4df6]"
+      }
     >
       {label}
     </button>
