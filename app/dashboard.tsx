@@ -9,7 +9,7 @@ import ReconcileFlow from "./reconcile-flow";
 const REVEAL_MS = 750;
 
 const INK = "#1c1915";
-const MUTED = "#6b6458";
+const MUTED = "#5f584a";
 const ACCENT = "#6c4df6";
 const MATCHED = "#0fa36b";
 const FEE = "#d97706";
@@ -317,7 +317,7 @@ export default function Dashboard({
                       </span>
                       <div>
                         {decision === null ? (
-                          <StatusChip label="Pending" color={MUTED} dim />
+                          <StatusChip label="Pending" color={ACCENT} />
                         ) : decision.type === "MATCH" ? (
                           <Outcome chip="Matched" color={MATCHED} reason={decision.reason} />
                         ) : decision.type === "FEE_SPLIT" ? (
@@ -474,7 +474,7 @@ export default function Dashboard({
                   >
                     <div className="flex items-start justify-between gap-2">
                       <div>
-                        <div className="font-mono text-xs font-bold text-[var(--muted)]">
+                        <div className="font-mono text-xs font-bold text-[#5d5648]">
                           {inv.InvoiceNumber}
                         </div>
                         <div className="mt-1 font-sans text-sm font-semibold">
@@ -486,14 +486,14 @@ export default function Dashboard({
                           ✓
                         </span>
                       ) : (
-                        <span className="rounded-full bg-[#f4f0e8] px-2 py-0.5 font-mono text-[9px] font-bold uppercase tracking-widest text-[var(--muted)]">
+                        <span className="rounded-full bg-[#eee9dd] px-2 py-0.5 font-mono text-[10px] font-bold uppercase tracking-widest text-[#5d5648]">
                           Open
                         </span>
                       )}
                     </div>
                     <div className="mt-3 flex items-end justify-between">
                       <span className="font-mono text-xl font-bold">{gbpPounds(inv.Total)}</span>
-                      <span className="font-mono text-[10px] text-[var(--muted)]">
+                      <span className="font-mono text-[11px] text-[#5d5648]">
                         due {paid ? gbpPounds(0) : gbpPounds(inv.AmountDue)}
                       </span>
                     </div>
@@ -686,7 +686,7 @@ function Outcome({
   return (
     <div className="space-y-1">
       <StatusChip label={chip} color={color} dashed={dashed} />
-      <p className="font-mono text-[10px] leading-snug" style={{ color }}>
+      <p className="font-mono text-[11px] leading-snug" style={{ color }}>
         {reason}
       </p>
     </div>
@@ -708,7 +708,7 @@ function StatusChip({
 }) {
   return (
     <span
-      className={`inline-block rounded-full border px-2.5 py-0.5 font-mono text-[9px] font-bold uppercase tracking-widest ${className ?? ""}`}
+      className={`inline-block rounded-full border px-2.5 py-0.5 font-mono text-[10px] font-bold uppercase tracking-widest ${className ?? ""}`}
       style={{
         color,
         borderColor: `${color}${dim ? "44" : "55"}`,

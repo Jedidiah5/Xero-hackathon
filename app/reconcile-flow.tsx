@@ -15,7 +15,7 @@ import type { ReconcileResult } from "@/lib/agent/reconcile";
 /* Palette + layout (world units)                                    */
 
 const TEXT = "#26221b";
-const TEXT_DIM = "#958e80";
+const TEXT_DIM = "#7a7264"; // darker than the old #958e80 — must read on a projector
 const ACCENT = "#6c4df6";
 const MATCHED = "#0fa36b";
 const FEE = "#f59e0b";
@@ -240,7 +240,7 @@ function zoneRect(x0: number, x1: number, colorHex: string, title: string): THRE
     new THREE.LineBasicMaterial({ color: colorHex, transparent: true, opacity: 0.55 })
   );
   group.add(rect);
-  const label = makeLabel([{ text: title, px: 24, color: colorHex, bold: true }], "left", 0.85);
+  const label = makeLabel([{ text: title, px: 26, color: colorHex, bold: true }], "left", 0.85);
   label.position.set(x0 + 0.15, LANE_TOP - 0.28, 0.05);
   group.add(label);
   return group;
@@ -256,14 +256,14 @@ function buildWorld(
 
   // Column headers
   const payHeader = makeLabel(
-    [{ text: "STRIPE — INCOMING", px: 26, color: TEXT_DIM, bold: true }],
+    [{ text: "STRIPE — INCOMING", px: 28, color: ACCENT, bold: true }],
     "left",
     0.9
   );
   payHeader.position.set(PAY_X - 0.3, 4.35, 0);
   root.add(payHeader);
   const invHeader = makeLabel(
-    [{ text: "XERO — OPEN INVOICES", px: 26, color: TEXT_DIM, bold: true }],
+    [{ text: "XERO — OPEN INVOICES", px: 28, color: TEXT_DIM, bold: true }],
     "left",
     0.9
   );
@@ -282,10 +282,10 @@ function buildWorld(
     const mat = new THREE.MeshBasicMaterial({ color: ACCENT, transparent: true });
     group.add(new THREE.Mesh(sphereGeo, mat));
     const label = makeLabel([
-      { text: p.billing_details.name ?? "Unknown sender", px: 34, bold: true, mono: false },
+      { text: p.billing_details.name ?? "Unknown sender", px: 36, bold: true, mono: false },
       {
         text: `${gbp(p.amount)} · ${p.metadata.invoice_number ?? "no ref"}`,
-        px: 26,
+        px: 28,
         color: TEXT_DIM,
       },
     ]);
@@ -309,8 +309,8 @@ function buildWorld(
 
     const label = makeLabel(
       [
-        { text: `${inv.InvoiceNumber} · ${gbpPounds(inv.Total)}`, px: 30, bold: true },
-        { text: inv.Contact.Name, px: 24, color: TEXT_DIM, mono: false },
+        { text: `${inv.InvoiceNumber} · ${gbpPounds(inv.Total)}`, px: 32, bold: true },
+        { text: inv.Contact.Name, px: 26, color: TEXT_DIM, mono: false },
       ],
       "center"
     );
@@ -494,7 +494,7 @@ function FlowInner({
         });
         fadeSprite(p.label, 0, 0.45, 0.55);
         const dup = makeLabel(
-          [{ text: "duplicate · skipped", px: 28, color: TEXT_DIM, bold: true }],
+          [{ text: "duplicate · skipped", px: 30, color: TEXT_DIM, bold: true }],
           "left",
           0
         );
@@ -749,7 +749,8 @@ function FlowInner({
         <span className="font-mono text-[10px] uppercase tracking-widest text-[var(--muted)]">
           Every node follows the agent&apos;s real decision
         </span>
-        <div className="flex flex-wrap gap-x-4 gap-y-1 font-mono text-[10px] text-[var(--muted)]">
+        <div className="flex flex-wrap gap-x-4 gap-y-1 font-mono text-[11px] text-[var(--muted)]">
+          <LegendDot color={ACCENT} label="incoming" />
           <LegendDot color={MATCHED} label="matched" />
           <LegendDot color="#d97706" label="fee split" />
           <LegendDot color={FLAGGED} label="flagged" />

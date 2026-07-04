@@ -5,7 +5,7 @@
   --background: #f4f0e8;
   --surface: #ffffff;
   --foreground: #1c1915;
-  --muted: #6b6458;
+  --muted: #5f584a; /* darker secondary — must survive a projector */
   --accent: #6c4df6;
   --accent-soft: #ede9fe;
   --matched: #0fa36b;
