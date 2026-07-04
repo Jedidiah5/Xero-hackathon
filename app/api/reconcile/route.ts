@@ -12,6 +12,7 @@ export async function POST() {
 
   const results = await reconcileAll(mockStripePayments, xero);
   const invoices = await xero.getInvoices();
+  const bankTransactions = xero instanceof MockXeroProvider ? xero.getBankTransactions() : [];
 
-  return NextResponse.json({ results, invoices });
+  return NextResponse.json({ results, invoices, bankTransactions });
 }

@@ -6,7 +6,7 @@ import { findExactMatch, penceToPounds } from "./match";
 export interface ReconcileResult {
   payment: StripeCharge;
   /** null = the agent doesn't handle this case yet → stays "Pending" in the UI.
-   *  Stages 2–3 replace null with FEE_SPLIT / PARTIAL / NO_MATCH / DUPLICATE. */
+   *  Stage 3 replaces null with PARTIAL / NO_MATCH / DUPLICATE. */
   decision: Decision | null;
 }
 
@@ -35,15 +35,38 @@ export async function reconcileAll(
   for (const payment of payments) {
     const gross = penceToPounds(payment.amount);
     const fee = penceToPounds(payment.balance_transaction.fee);
+    const net = penceToPounds(payment.balance_transaction.net);
 
-    // Stage 1: only the clean MATCH path — no fee, exact single hit on
-    // reference + amount + customer. Everything else stays pending for now.
-    const hit = fee === 0 ? findExactMatch(payment, openInvoices) : null;
+    // Exact single hit on reference + amount + customer against the cache.
+    // PARTIAL / NO_MATCH / DUPLICATE handling lands in Stage 3.
+    const hit = findExactMatch(payment, openInvoices);
 
-    if (hit) {
-      await xero.markPaid(hit.invoice.InvoiceID, gross, payment.id);
-      openInvoices.splice(openInvoices.indexOf(hit.invoice), 1);
+    if (!hit) {
+      results.push({ payment, decision: null });
+      continue;
+    }
 
+    // The invoice is settled for the GROSS amount — the customer paid it in
+    // full; Stripe's cut is the business's cost, not the customer's shortfall.
+    await xero.markPaid(hit.invoice.InvoiceID, gross, payment.id);
+    openInvoices.splice(openInvoices.indexOf(hit.invoice), 1);
+
+    if (fee > 0) {
+      // FEE_SPLIT: gross settles the invoice, the fee books as spend money,
+      // and the net deposit is what actually lands in the bank feed.
+      await xero.createFeeExpense(hit.invoice.Contact.Name, fee, payment.id);
+      results.push({
+        payment,
+        decision: {
+          type: "FEE_SPLIT",
+          payment,
+          invoice: hit.invoice,
+          feeAmount: fee,
+          confidence: 0.97,
+          reason: `${hit.invoice.InvoiceNumber} paid in full (${gbp(gross)}) · ${gbp(fee)} Stripe fee booked to expense — net ${gbp(net)} reconciles against the deposit.`,
+        },
+      });
+    } else {
       results.push({
         payment,
         decision: {
@@ -54,8 +77,6 @@ export async function reconcileAll(
           reason: `Reference ${hit.invoice.InvoiceNumber}, amount ${gbp(gross)} and customer ${hit.invoice.Contact.Name} all agree — marked paid.`,
         },
       });
-    } else {
-      results.push({ payment, decision: null });
     }
   }
 

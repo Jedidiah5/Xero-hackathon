@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo, useRef, useState } from "react";
-import type { Invoice } from "@/lib/xero/types";
+import type { BankTransaction, Invoice } from "@/lib/xero/types";
 import type { StripeCharge } from "@/lib/stripe/types";
 import type { ReconcileResult } from "@/lib/agent/reconcile";
 
@@ -23,6 +23,7 @@ export default function Dashboard({
   const [results, setResults] = useState<(ReconcileResult | null)[]>(() =>
     initialPayments.map(() => null)
   );
+  const [bankTxns, setBankTxns] = useState<BankTransaction[]>([]);
   const [running, setRunning] = useState(false);
   const [hasRun, setHasRun] = useState(false);
   const timers = useRef<number[]>([]);
@@ -34,14 +35,34 @@ export default function Dashboard({
     ["PARTIAL", "NO_MATCH", "DUPLICATE"].includes(r!.decision?.type ?? "")
   ).length;
 
+  // An invoice is settled by both MATCH and FEE_SPLIT outcomes.
   const paidInvoiceIds = useMemo(
     () =>
       new Set(
         revealed
-          .filter((r) => r!.decision?.type === "MATCH" && r!.decision.invoice)
+          .filter(
+            (r) =>
+              (r!.decision?.type === "MATCH" || r!.decision?.type === "FEE_SPLIT") &&
+              r!.decision.invoice
+          )
           .map((r) => r!.decision!.invoice!.InvoiceID)
       ),
     [revealed]
+  );
+
+  // Fee expenses appear in sync with their payment's reveal: the mock stores
+  // the Stripe charge id as the bank transaction's Reference.
+  const revealedFeeSplitChargeIds = useMemo(
+    () =>
+      new Set(
+        revealed
+          .filter((r) => r!.decision?.type === "FEE_SPLIT")
+          .map((r) => r!.payment.id)
+      ),
+    [revealed]
+  );
+  const visibleTxns = bankTxns.filter(
+    (bt) => bt.Reference && revealedFeeSplitChargeIds.has(bt.Reference)
   );
 
   const run = async () => {
@@ -50,11 +71,14 @@ export default function Dashboard({
     timers.current.forEach((t) => window.clearTimeout(t));
     timers.current = [];
     setResults(initialPayments.map(() => null));
+    setBankTxns([]);
 
     try {
       const res = await fetch("/api/reconcile", { method: "POST" });
       if (!res.ok) throw new Error(`Reconcile failed: ${res.status}`);
-      const data: { results: ReconcileResult[] } = await res.json();
+      const data: { results: ReconcileResult[]; bankTransactions: BankTransaction[] } =
+        await res.json();
+      setBankTxns(data.bankTransactions);
 
       data.results.forEach((result, i) => {
         const t = window.setTimeout(() => {
@@ -100,7 +124,7 @@ export default function Dashboard({
       {/* Stat row */}
       <div className="mt-10 grid grid-cols-2 gap-4 md:grid-cols-4">
         <StatCard label="Incoming" value={initialPayments.length} color="#f5f0e6" />
-        <StatCard label="Reconciled" value={matchedCount} color="#1d9e75" />
+        <StatCard label="Reconciled" value={matchedCount + feeSplitCount} color="#1d9e75" />
         <StatCard label="Fees split" value={feeSplitCount} color="#eda100" />
         <StatCard label="Flagged" value={flaggedCount} color="#d85a30" />
       </div>
@@ -126,10 +150,9 @@ export default function Dashboard({
                 </span>
                 <span className="col-span-3 md:col-span-1">
                   {decision?.type === "MATCH" ? (
-                    <span className="flex flex-wrap items-baseline gap-x-3">
-                      <StatusChip label="Matched" color="#1d9e75" />
-                      <span className="font-mono text-xs text-[#1d9e75]">{decision.reason}</span>
-                    </span>
+                    <Outcome chip="Matched" color="#1d9e75" reason={decision.reason} />
+                  ) : decision?.type === "FEE_SPLIT" ? (
+                    <Outcome chip="Fee split" color="#eda100" reason={decision.reason} />
                   ) : (
                     <StatusChip label="Pending" color="#f5f0e6" dim />
                   )}
@@ -143,7 +166,10 @@ export default function Dashboard({
       {/* Xero invoices */}
       <section className="mt-12">
         <h2 className="font-sans text-xl font-bold">
-          Xero invoices <span className="font-mono text-sm font-normal opacity-50">GET /Invoices · cached once per run</span>
+          Xero invoices{" "}
+          <span className="font-mono text-sm font-normal opacity-50">
+            GET /Invoices · cached once per run
+          </span>
         </h2>
         <div className="mt-4 border-t border-[#f5f0e6]/15">
           {initialInvoices.map((inv) => {
@@ -169,6 +195,39 @@ export default function Dashboard({
           })}
         </div>
       </section>
+
+      {/* Fee expenses — the split-out Stripe fees, booked as spend money */}
+      <section className="mt-12">
+        <h2 className="font-sans text-xl font-bold">
+          Fee expenses{" "}
+          <span className="font-mono text-sm font-normal opacity-50">
+            POST /BankTransactions · spend money
+          </span>
+        </h2>
+        <div className="mt-4 border-t border-[#f5f0e6]/15">
+          {visibleTxns.length === 0 ? (
+            <div className="border-b border-[#f5f0e6]/10 py-3 font-mono text-sm opacity-35">
+              — none booked yet
+            </div>
+          ) : (
+            visibleTxns.map((bt) => (
+              <div
+                key={bt.BankTransactionID}
+                className="grid grid-cols-[1fr_10rem_8rem_auto] items-baseline gap-x-6 border-b border-[#f5f0e6]/10 py-3"
+              >
+                <span className="font-sans text-base">{bt.LineItems[0].Description}</span>
+                <span className="font-mono text-sm opacity-60">
+                  {bt.LineItems[0].AccountCode} · Bank Fees
+                </span>
+                <span className="font-mono text-sm text-[#eda100]">
+                  {gbpPounds(bt.Total)}
+                </span>
+                <StatusChip label="Booked" color="#eda100" />
+              </div>
+            ))
+          )}
+        </div>
+      </section>
     </main>
   );
 }
@@ -181,6 +240,17 @@ function StatCard({ label, value, color }: { label: string; value: number; color
         {value}
       </div>
     </div>
+  );
+}
+
+function Outcome({ chip, color, reason }: { chip: string; color: string; reason: string }) {
+  return (
+    <span className="flex flex-wrap items-baseline gap-x-3">
+      <StatusChip label={chip} color={color} />
+      <span className="font-mono text-xs" style={{ color }}>
+        {reason}
+      </span>
+    </span>
   );
 }
 
