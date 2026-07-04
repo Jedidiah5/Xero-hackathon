@@ -9,10 +9,11 @@ processing fee so the books balance, and flagging what it can't confidently reso
 (partial payments, unknown senders, duplicate webhooks) into a human review queue.
 
 **Dev platform:** Claude Code.
-**Status:** Stage 3 (all six demo outcomes resolve: match, fee split, partial, no-match,
-duplicate-skip + review queue). Live Xero connection pending Xero's fix to the developer
-account creation error; built against a mock provider behind the same `XeroProvider`
-interface, swapped via `XERO_MODE=mock|live`.
+**Status:** Stage 5 — LIVE Xero connection established. `LiveXeroProvider` talks to the
+Xero MCP server (`https://builders.xero.com/beta/mcp`, OAuth 2.0 PKCE, Demo Company (UK)
+org) behind the same `XeroProvider` interface as the mock; the demo runs on either via
+`XERO_MODE=mock|live`. All six demo outcomes resolve: match, fee split, partial, no-match,
+duplicate-skip + review queue, with the Three.js flow hero on top.
 
 ## 1. How did the project use the Xero API?
 Core workflow: reconciliation. The agent pulls open ACCREC invoices and contacts into a
@@ -54,25 +55,31 @@ payments back to a human with a "Find & Match" button. Ledger automates that tri
   `MockXeroProvider` and the live MCP-backed provider are interchangeable via `XERO_MODE`.
 
 ## 2. Which Xero API endpoints + methods?
-Mirrored 1:1 by the mock provider (`lib/xero/provider.ts` is the swap boundary):
+Accessed through the Xero MCP server's tools, which wrap the Accounting API 1:1
+(`lib/xero/provider.ts` is the swap boundary; the mock mirrors the same shapes):
 
-In use as of Stage 2:
-- `GET /Invoices` — open ACCREC invoices, pulled ONCE per run into the matching cache
-  (rate-limit-aware: 60 calls/min budget, never a per-payment read loop)
-- `GET /Contacts` — pulled into the same cache; exact customer matching now, fuzzy later
-- `POST /Payments` — apply a matched payment against its invoice for the gross amount
-  (marks it PAID)
-- `POST /BankTransactions` — book the Stripe processing fee as SPEND money against the
-  fee-expense account, referenced to the Stripe charge id
-
-Planned (Stage 3+):
-- `GET /Accounts` — bank + fee expense account codes
+- `GET /Invoices` (MCP `list_invoices`, statuses=AUTHORISED, paginated) — open ACCREC
+  invoices, pulled ONCE per run into the matching cache (rate-limit-aware: 60 calls/min
+  budget, never a per-payment read loop)
+- `GET /Contacts` (MCP `list_contacts`) — pulled into the same cache for customer matching;
+  also used with `searchTerm` to resolve the Stripe fee payee
+- `GET /Accounts` (MCP `list_accounts`) — bank account + fee expense account, cached
+- `POST /Payments` (MCP `create_payment`) — apply a matched payment against its invoice
+  for the gross amount (marks it PAID)
+- `POST /BankTransactions` (MCP `create_bank_transaction`, type=SPEND) — book the Stripe
+  processing fee against the fee-expense account
+- `GET /Connections` (MCP `get_connected_tenants`) — resolve the tenant (Demo Company (UK))
+- (`create_contact` as fallback if no Stripe contact exists in the org)
 
 ## 3. Which OAuth 2.0 scopes?
-- `accounting.transactions` (invoices, payments, bank transactions — read/write)
-- `accounting.contacts`
-- `accounting.settings` (chart of accounts)
-- plus the openid/profile/email + payments/reports scopes the Xero MCP server grants
+As granted by the Xero MCP server's PKCE flow (verified from the live token):
+- `accounting.invoices` (+ `.read`) — the matching cache and invoice writes
+- `accounting.payments` (+ `.read`) — applying payments to matched invoices
+- `accounting.banktransactions` (+ `.read`) — booking Stripe fees as spend money
+- `accounting.contacts` (+ `.read`) — customer matching, Stripe payee resolution
+- `accounting.settings` (+ `.read`) — chart of accounts
+- `openid profile email offline_access` + read-only report scopes
+  (`profitandloss`, `trialbalance`, `balancesheet`, `aged`)
 
 ## Assets checklist
 - [ ] Presentation link (Google Slides/Canva)
