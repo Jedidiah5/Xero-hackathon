@@ -12,6 +12,8 @@ const gbp = (pence: number) =>
 const gbpPounds = (pounds: number) =>
   pounds.toLocaleString("en-GB", { style: "currency", currency: "GBP" });
 
+type QueueAction = "approved" | "reassigned";
+
 export default function Dashboard({
   initialPayments,
   initialInvoices,
@@ -24,16 +26,24 @@ export default function Dashboard({
     initialPayments.map(() => null)
   );
   const [bankTxns, setBankTxns] = useState<BankTransaction[]>([]);
+  const [queueActions, setQueueActions] = useState<Record<number, QueueAction>>({});
   const [running, setRunning] = useState(false);
   const [hasRun, setHasRun] = useState(false);
   const timers = useRef<number[]>([]);
 
-  const revealed = useMemo(() => results.filter((r) => r !== null), [results]);
-  const matchedCount = revealed.filter((r) => r!.decision?.type === "MATCH").length;
-  const feeSplitCount = revealed.filter((r) => r!.decision?.type === "FEE_SPLIT").length;
-  const flaggedCount = revealed.filter((r) =>
-    ["PARTIAL", "NO_MATCH", "DUPLICATE"].includes(r!.decision?.type ?? "")
-  ).length;
+  const revealed = useMemo(
+    () =>
+      results
+        .map((r, i) => (r === null ? null : { ...r, index: i }))
+        .filter((r) => r !== null),
+    [results]
+  );
+  const matchedCount = revealed.filter((r) => r.decision.type === "MATCH").length;
+  const feeSplitCount = revealed.filter((r) => r.decision.type === "FEE_SPLIT").length;
+  const flaggedItems = revealed.filter((r) =>
+    ["PARTIAL", "NO_MATCH"].includes(r.decision.type)
+  );
+  const skippedItems = revealed.filter((r) => r.decision.type === "DUPLICATE");
 
   // An invoice is settled by both MATCH and FEE_SPLIT outcomes.
   const paidInvoiceIds = useMemo(
@@ -42,10 +52,10 @@ export default function Dashboard({
         revealed
           .filter(
             (r) =>
-              (r!.decision?.type === "MATCH" || r!.decision?.type === "FEE_SPLIT") &&
-              r!.decision.invoice
+              (r.decision.type === "MATCH" || r.decision.type === "FEE_SPLIT") &&
+              r.decision.invoice
           )
-          .map((r) => r!.decision!.invoice!.InvoiceID)
+          .map((r) => r.decision.invoice!.InvoiceID)
       ),
     [revealed]
   );
@@ -55,9 +65,7 @@ export default function Dashboard({
   const revealedFeeSplitChargeIds = useMemo(
     () =>
       new Set(
-        revealed
-          .filter((r) => r!.decision?.type === "FEE_SPLIT")
-          .map((r) => r!.payment.id)
+        revealed.filter((r) => r.decision.type === "FEE_SPLIT").map((r) => r.payment.id)
       ),
     [revealed]
   );
@@ -72,6 +80,7 @@ export default function Dashboard({
     timers.current = [];
     setResults(initialPayments.map(() => null));
     setBankTxns([]);
+    setQueueActions({});
 
     try {
       const res = await fetch("/api/reconcile", { method: "POST" });
@@ -123,10 +132,15 @@ export default function Dashboard({
 
       {/* Stat row */}
       <div className="mt-10 grid grid-cols-2 gap-4 md:grid-cols-4">
-        <StatCard label="Incoming" value={initialPayments.length} color="#f5f0e6" />
+        <StatCard
+          label="Incoming"
+          value={initialPayments.length}
+          color="#f5f0e6"
+          sub={skippedItems.length > 0 ? `${skippedItems.length} duplicate skipped` : undefined}
+        />
         <StatCard label="Reconciled" value={matchedCount + feeSplitCount} color="#1d9e75" />
         <StatCard label="Fees split" value={feeSplitCount} color="#eda100" />
-        <StatCard label="Flagged" value={flaggedCount} color="#d85a30" />
+        <StatCard label="Flagged" value={flaggedItems.length} color="#d85a30" />
       </div>
 
       {/* Payment list */}
@@ -135,10 +149,12 @@ export default function Dashboard({
         <div className="mt-4 border-t border-[#f5f0e6]/15">
           {initialPayments.map((p, i) => {
             const decision = results[i]?.decision ?? null;
+            const isDuplicate = decision?.type === "DUPLICATE";
             return (
               <div
                 key={`${p.id}-${i}`}
-                className="grid grid-cols-[2rem_1fr_auto] items-baseline gap-x-6 gap-y-1 border-b border-[#f5f0e6]/10 py-4 md:grid-cols-[2rem_14rem_8rem_8rem_1fr]"
+                className="grid grid-cols-[2rem_1fr_auto] items-baseline gap-x-6 gap-y-1 border-b border-[#f5f0e6]/10 py-4 transition-opacity md:grid-cols-[2rem_14rem_8rem_8rem_1fr]"
+                style={isDuplicate ? { opacity: 0.45 } : undefined}
               >
                 <span className="font-mono text-sm opacity-40">{i + 1}</span>
                 <span className="font-sans text-base font-medium">
@@ -149,17 +165,102 @@ export default function Dashboard({
                   {p.metadata.invoice_number ?? "no ref"}
                 </span>
                 <span className="col-span-3 md:col-span-1">
-                  {decision?.type === "MATCH" ? (
-                    <Outcome chip="Matched" color="#1d9e75" reason={decision.reason} />
-                  ) : decision?.type === "FEE_SPLIT" ? (
-                    <Outcome chip="Fee split" color="#eda100" reason={decision.reason} />
-                  ) : (
+                  {decision === null ? (
                     <StatusChip label="Pending" color="#f5f0e6" dim />
+                  ) : decision.type === "MATCH" ? (
+                    <Outcome chip="Matched" color="#1d9e75" reason={decision.reason} />
+                  ) : decision.type === "FEE_SPLIT" ? (
+                    <Outcome chip="Fee split" color="#eda100" reason={decision.reason} />
+                  ) : decision.type === "PARTIAL" ? (
+                    <Outcome chip="Partial" color="#d85a30" reason={decision.reason} />
+                  ) : decision.type === "NO_MATCH" ? (
+                    <Outcome chip="No match" color="#d85a30" reason={decision.reason} />
+                  ) : (
+                    <Outcome chip="Skipped · duplicate" color="#f5f0e6" reason={decision.reason} dashed />
                   )}
                 </span>
               </div>
             );
           })}
+        </div>
+      </section>
+
+      {/* Review queue — the human-in-the-loop step incumbents leave manual */}
+      <section className="mt-12">
+        <h2 className="font-sans text-xl font-bold">
+          Review queue{" "}
+          <span className="font-mono text-sm font-normal opacity-50">
+            flagged by the agent · human decides
+          </span>
+        </h2>
+        <div className="mt-4 space-y-3">
+          {flaggedItems.length === 0 ? (
+            <div className="border-t border-b border-[#f5f0e6]/10 py-3 font-mono text-sm opacity-35">
+              — nothing flagged yet
+            </div>
+          ) : (
+            flaggedItems.map((item) => {
+              const acted = queueActions[item.index];
+              return (
+                <div
+                  key={item.index}
+                  className="border-l-4 border-[#d85a30] bg-[#d85a30]/5 p-4"
+                >
+                  <div className="flex flex-wrap items-baseline justify-between gap-x-6 gap-y-2">
+                    <div>
+                      <span className="font-sans text-base font-medium">
+                        {item.payment.billing_details.name ?? "Unknown sender"}
+                      </span>
+                      <span className="ml-4 font-mono text-base">{gbp(item.payment.amount)}</span>
+                      <StatusChip
+                        label={item.decision.type === "PARTIAL" ? "Partial" : "No match"}
+                        color="#d85a30"
+                        className="ml-4"
+                      />
+                    </div>
+                    {acted ? (
+                      <span className="font-mono text-xs uppercase tracking-widest text-[#c8ff00]">
+                        {acted === "approved" ? "Approved ✓" : "Reassigned →"}
+                      </span>
+                    ) : (
+                      <div className="flex gap-2">
+                        <QueueButton
+                          label="Approve"
+                          onClick={() =>
+                            setQueueActions((prev) => ({ ...prev, [item.index]: "approved" }))
+                          }
+                        />
+                        <QueueButton
+                          label="Reassign"
+                          onClick={() =>
+                            setQueueActions((prev) => ({ ...prev, [item.index]: "reassigned" }))
+                          }
+                        />
+                      </div>
+                    )}
+                  </div>
+                  <p className="mt-2 font-mono text-xs text-[#d85a30]">{item.decision.reason}</p>
+                </div>
+              );
+            })
+          )}
+
+          {/* Duplicates are not "needs review" — they're handled by being ignored */}
+          {skippedItems.map((item) => (
+            <div
+              key={item.index}
+              className="border border-dashed border-[#f5f0e6]/30 p-4 opacity-60"
+            >
+              <div className="flex flex-wrap items-baseline gap-x-6 gap-y-1">
+                <span className="font-sans text-base">
+                  {item.payment.billing_details.name ?? "Unknown sender"}
+                </span>
+                <span className="font-mono text-base">{gbp(item.payment.amount)}</span>
+                <StatusChip label="Skipped" color="#f5f0e6" dim />
+              </div>
+              <p className="mt-2 font-mono text-xs opacity-70">{item.decision.reason}</p>
+            </div>
+          ))}
         </div>
       </section>
 
@@ -219,9 +320,7 @@ export default function Dashboard({
                 <span className="font-mono text-sm opacity-60">
                   {bt.LineItems[0].AccountCode} · Bank Fees
                 </span>
-                <span className="font-mono text-sm text-[#eda100]">
-                  {gbpPounds(bt.Total)}
-                </span>
+                <span className="font-mono text-sm text-[#eda100]">{gbpPounds(bt.Total)}</span>
                 <StatusChip label="Booked" color="#eda100" />
               </div>
             ))
@@ -232,35 +331,84 @@ export default function Dashboard({
   );
 }
 
-function StatCard({ label, value, color }: { label: string; value: number; color: string }) {
+function StatCard({
+  label,
+  value,
+  color,
+  sub,
+}: {
+  label: string;
+  value: number;
+  color: string;
+  sub?: string;
+}) {
   return (
     <div className="border border-[#f5f0e6]/15 p-5">
       <div className="font-mono text-xs uppercase tracking-widest opacity-50">{label}</div>
       <div className="mt-2 font-mono text-5xl font-bold" style={{ color }}>
         {value}
       </div>
+      {sub && <div className="mt-1 font-mono text-xs opacity-45">{sub}</div>}
     </div>
   );
 }
 
-function Outcome({ chip, color, reason }: { chip: string; color: string; reason: string }) {
+function Outcome({
+  chip,
+  color,
+  reason,
+  dashed,
+}: {
+  chip: string;
+  color: string;
+  reason: string;
+  dashed?: boolean;
+}) {
   return (
     <span className="flex flex-wrap items-baseline gap-x-3">
-      <StatusChip label={chip} color={color} />
-      <span className="font-mono text-xs" style={{ color }}>
+      <StatusChip label={chip} color={color} dashed={dashed} />
+      <span className="font-mono text-xs" style={{ color, opacity: dashed ? 0.7 : 1 }}>
         {reason}
       </span>
     </span>
   );
 }
 
-function StatusChip({ label, color, dim }: { label: string; color: string; dim?: boolean }) {
+function StatusChip({
+  label,
+  color,
+  dim,
+  dashed,
+  className,
+}: {
+  label: string;
+  color: string;
+  dim?: boolean;
+  dashed?: boolean;
+  className?: string;
+}) {
   return (
     <span
-      className="inline-block border px-2 py-0.5 font-mono text-xs uppercase tracking-widest"
-      style={{ color, borderColor: color, opacity: dim ? 0.35 : 1 }}
+      className={`inline-block border px-2 py-0.5 font-mono text-xs uppercase tracking-widest ${className ?? ""}`}
+      style={{
+        color,
+        borderColor: color,
+        opacity: dim ? 0.35 : 1,
+        borderStyle: dashed ? "dashed" : "solid",
+      }}
     >
       {label}
     </span>
+  );
+}
+
+function QueueButton({ label, onClick }: { label: string; onClick: () => void }) {
+  return (
+    <button
+      onClick={onClick}
+      className="border border-[#f5f0e6]/40 px-4 py-1.5 font-mono text-xs uppercase tracking-widest transition-colors hover:border-[#c8ff00] hover:text-[#c8ff00]"
+    >
+      {label}
+    </button>
   );
 }

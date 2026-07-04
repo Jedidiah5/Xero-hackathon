@@ -35,3 +35,23 @@ export function findExactMatch(payment: StripeCharge, openInvoices: Invoice[]): 
   if (hits.length !== 1) return null;
   return { invoice: hits[0], referenceHit: true, amountHit: true, customerHit: true };
 }
+
+/**
+ * Partial match: reference and customer agree with exactly ONE open invoice,
+ * but the payment is short of what's due. A confident identification with an
+ * amount shortfall — flag it, never auto-post it as settled.
+ */
+export function findPartialMatch(payment: StripeCharge, openInvoices: Invoice[]): MatchHit | null {
+  const ref = payment.metadata.invoice_number;
+  const name = payment.billing_details.name;
+  const gross = penceToPounds(payment.amount);
+
+  const hits = openInvoices.filter((inv) => {
+    const referenceHit = !!ref && norm(inv.InvoiceNumber) === norm(ref);
+    const customerHit = !!name && norm(inv.Contact.Name) === norm(name);
+    return referenceHit && customerHit && gross < inv.AmountDue;
+  });
+
+  if (hits.length !== 1) return null;
+  return { invoice: hits[0], referenceHit: true, amountHit: false, customerHit: true };
+}

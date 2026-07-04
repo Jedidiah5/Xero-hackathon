@@ -9,9 +9,10 @@ processing fee so the books balance, and flagging what it can't confidently reso
 (partial payments, unknown senders, duplicate webhooks) into a human review queue.
 
 **Dev platform:** Claude Code.
-**Status:** Stage 2 (clean matches + fee split reconcile end-to-end). Live Xero connection
-pending Xero's fix to the developer account creation error; built against a mock provider
-behind the same `XeroProvider` interface, swapped via `XERO_MODE=mock|live`.
+**Status:** Stage 3 (all six demo outcomes resolve: match, fee split, partial, no-match,
+duplicate-skip + review queue). Live Xero connection pending Xero's fix to the developer
+account creation error; built against a mock provider behind the same `XeroProvider`
+interface, swapped via `XERO_MODE=mock|live`.
 
 ## 1. How did the project use the Xero API?
 Core workflow: reconciliation. The agent pulls open ACCREC invoices and contacts into a
@@ -29,6 +30,28 @@ that never balance. Ledger books it the way an accountant would, in one atomic d
   reconciles with zero manual "Find & Match" clicks.
 This is the £100-invoice / £97.10-deposit problem Xero users click through by hand today,
 resolved by the agent per payment.
+
+**Flagging — the agent knows what NOT to write.** Xero's own Stripe feed kicks ambiguous
+payments back to a human with a "Find & Match" button. Ledger automates that triage:
+- **Partial payment** (right invoice, short amount): the invoice is confidently identified
+  via reference + contact, but the agent never posts a short payment as "settled" — it goes
+  to the review queue with the shortfall named, books untouched.
+- **No match** (no reference, no amount/customer hit): routed to the review queue instead
+  of guessing or auto-creating a spurious invoice. The human approves or reassigns; the
+  ledger only ever receives writes the agent is confident in.
+
+## Architecture notes (the 20% score)
+- **Real idempotency, not a demo hack.** Every processed Stripe charge id is recorded in an
+  idempotency store; a redelivered webhook is recognised by charge id alone and returns
+  DUPLICATE *before* any matching or writing runs. Payment #6 in the demo is byte-identical
+  to #1 (same charge id) and is skipped with zero Xero writes — no double-booked revenue.
+  In production the store is a durable set (DB unique key); the decision logic is identical.
+- **Rate-limit-aware by design.** Xero allows 60 calls/min, 1,000/day, 5 concurrent. The
+  agent pulls invoices + contacts ONCE per run into a local cache, matches all payments
+  against the cache (writes update it in place, so a settled invoice can't match twice),
+  and writes back only results. A six-payment run costs 2 reads + 4 writes, not 6×N calls.
+- **Mock/live swap isolation.** The agent and UI talk only to the `XeroProvider` interface;
+  `MockXeroProvider` and the live MCP-backed provider are interchangeable via `XERO_MODE`.
 
 ## 2. Which Xero API endpoints + methods?
 Mirrored 1:1 by the mock provider (`lib/xero/provider.ts` is the swap boundary):
