@@ -322,8 +322,9 @@ function buildWorld(
     fill.visible = false;
     group.add(fill);
 
+    // Corner badge — clear of the centred label text at any label width.
     const tick = makeLabel([{ text: "✓", px: 44, color: MATCHED, bold: true }], "center");
-    tick.position.set(CARD_W / 2 - 0.42, 0, 0.25);
+    tick.position.set(CARD_W / 2 + 0.02, CARD_H / 2 + 0.04, 0.25);
     tick.visible = false;
     group.add(tick);
 
