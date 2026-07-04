@@ -1,0 +1,712 @@
+"use client";
+
+// Stage 4 — the Three.js reconciliation-flow hero.
+// Purely additive: driven by the SAME `results` array the dashboard reveals,
+// so the flow and the numbers can never disagree. Wrapped in an error
+// boundary — if WebGL fails, the section disappears and Stage 3 is untouched.
+
+import { Component, type ReactNode, useEffect, useRef, useState } from "react";
+import * as THREE from "three";
+import type { Invoice } from "@/lib/xero/types";
+import type { StripeCharge } from "@/lib/stripe/types";
+import type { ReconcileResult } from "@/lib/agent/reconcile";
+
+/* ---------------------------------------------------------------- */
+/* Palette + layout (world units)                                    */
+
+const TEXT = "#f5f0e6";
+const TEXT_DIM = "#a8a396";
+const ACCENT = "#c8ff00";
+const MATCHED = "#1d9e75";
+const FEE = "#eda100";
+const FLAGGED = "#d85a30";
+
+const PAY_X = -8;
+const INV_X = 8;
+const CARD_W = 3.6;
+const CARD_H = 0.85;
+const FILL_W = CARD_W - 0.24;
+const DOCK_X = INV_X - CARD_W / 2 - 0.38; // sphere docks on the card's left edge
+const slotY = (i: number) => 3.4 - i * 1.15;
+
+const REVIEW_SLOTS = [
+  { x: -5.9, y: -4.45 },
+  { x: -1.7, y: -4.45 },
+];
+const EXPENSE_SLOT = { x: 3.7, y: -4.45 };
+const LANE_TOP = -3.7;
+const LANE_BOTTOM = -5.15;
+
+// Camera framing: fit this world box whatever the container aspect is.
+const FRAME = { cx: 0.7, cy: -0.35, halfW: 9.9, halfH: 5.2 };
+const FOV = 42;
+
+const gbp = (pence: number) =>
+  (pence / 100).toLocaleString("en-GB", { style: "currency", currency: "GBP" });
+const gbpPounds = (pounds: number) =>
+  pounds.toLocaleString("en-GB", { style: "currency", currency: "GBP" });
+
+/* ---------------------------------------------------------------- */
+/* Easing                                                            */
+
+const easeInOut = (t: number) => (t < 0.5 ? 4 * t * t * t : 1 - (-2 * t + 2) ** 3 / 2);
+const easeOut = (t: number) => 1 - (1 - t) ** 3;
+const easeOutBack = (t: number) => {
+  const c = 1.70158;
+  return 1 + (c + 1) * (t - 1) ** 3 + c * (t - 1) ** 2;
+};
+const linear = (t: number) => t;
+
+/* ---------------------------------------------------------------- */
+/* Canvas-texture labels — large, high-contrast, projector-legible   */
+
+interface LabelLine {
+  text: string;
+  px: number;
+  color?: string;
+  mono?: boolean; // default true (Space Mono); false = Space Grotesk
+  bold?: boolean;
+}
+
+const PX_TO_WORLD = 0.0072;
+
+let fontCache: { mono: string; sans: string } | null = null;
+function fonts() {
+  if (!fontCache) {
+    const css = getComputedStyle(document.documentElement);
+    fontCache = {
+      mono: css.getPropertyValue("--font-space-mono").trim() || "monospace",
+      sans: css.getPropertyValue("--font-space-grotesk").trim() || "sans-serif",
+    };
+  }
+  return fontCache;
+}
+
+function makeLabel(
+  lines: LabelLine[],
+  align: "left" | "center" = "left",
+  opacity = 1
+): THREE.Sprite {
+  const f = fonts();
+  const dpr = 2;
+  const pad = 10;
+  const gap = 8;
+  const canvas = document.createElement("canvas");
+  const g = canvas.getContext("2d")!;
+  const fontFor = (l: LabelLine) =>
+    `${l.bold ? 700 : 400} ${l.px}px ${l.mono === false ? f.sans : f.mono}`;
+
+  let maxW = 0;
+  for (const l of lines) {
+    g.font = fontFor(l);
+    maxW = Math.max(maxW, g.measureText(l.text).width);
+  }
+  const cssW = Math.ceil(maxW + pad * 2);
+  const cssH = Math.ceil(
+    lines.reduce((a, l) => a + l.px * 1.25, 0) + gap * (lines.length - 1) + pad * 2
+  );
+  canvas.width = cssW * dpr;
+  canvas.height = cssH * dpr;
+  g.scale(dpr, dpr);
+  g.textBaseline = "top";
+  let y = pad;
+  for (const l of lines) {
+    g.font = fontFor(l);
+    g.fillStyle = l.color ?? TEXT;
+    const x = align === "center" ? (cssW - g.measureText(l.text).width) / 2 : pad;
+    g.fillText(l.text, x, y);
+    y += l.px * 1.25 + gap;
+  }
+
+  const tex = new THREE.CanvasTexture(canvas);
+  tex.minFilter = THREE.LinearFilter;
+  tex.colorSpace = THREE.SRGBColorSpace;
+  const mat = new THREE.SpriteMaterial({ map: tex, transparent: true, opacity, depthTest: false });
+  const sprite = new THREE.Sprite(mat);
+  sprite.scale.set(cssW * PX_TO_WORLD, cssH * PX_TO_WORLD, 1);
+  if (align === "left") sprite.center.set(0, 0.5);
+  sprite.renderOrder = 10;
+  sprite.userData.baseScale = sprite.scale.clone();
+  return sprite;
+}
+
+/* ---------------------------------------------------------------- */
+/* Small scene helpers                                               */
+
+function disposeDeep(obj: THREE.Object3D) {
+  obj.traverse((o) => {
+    const withGeo = o as Partial<THREE.Mesh>;
+    withGeo.geometry?.dispose();
+    const mat = (o as Partial<THREE.Mesh>).material;
+    for (const m of Array.isArray(mat) ? mat : mat ? [mat] : []) {
+      (m as THREE.SpriteMaterial).map?.dispose();
+      m.dispose();
+    }
+  });
+}
+
+function makeTrail(parent: THREE.Object3D, from: THREE.Vector3): THREE.Line {
+  const geo = new THREE.BufferGeometry().setFromPoints([from.clone(), from.clone()]);
+  const mat = new THREE.LineBasicMaterial({ color: TEXT, transparent: true, opacity: 0.22 });
+  const line = new THREE.Line(geo, mat);
+  parent.add(line);
+  return line;
+}
+
+function setTrailEnd(line: THREE.Line, from: THREE.Vector3, end: THREE.Vector3) {
+  const pos = line.geometry.getAttribute("position") as THREE.BufferAttribute;
+  pos.setXYZ(0, from.x, from.y, from.z);
+  pos.setXYZ(1, end.x, end.y, end.z);
+  pos.needsUpdate = true;
+}
+
+const bezier = (
+  out: THREE.Vector3,
+  a: THREE.Vector3,
+  c: THREE.Vector3,
+  b: THREE.Vector3,
+  t: number
+) => {
+  const u = 1 - t;
+  out.set(
+    u * u * a.x + 2 * u * t * c.x + t * t * b.x,
+    u * u * a.y + 2 * u * t * c.y + t * t * b.y,
+    u * u * a.z + 2 * u * t * c.z + t * t * b.z
+  );
+};
+
+/* ---------------------------------------------------------------- */
+/* World build — everything the reset/replay control rebuilds        */
+
+interface PaymentHandle {
+  group: THREE.Group;
+  sphereMat: THREE.MeshBasicMaterial;
+  label: THREE.Sprite;
+  baseY: number;
+  phase: number;
+  busy: boolean;
+}
+
+interface InvoiceHandle {
+  group: THREE.Group;
+  cardMat: THREE.MeshBasicMaterial;
+  edgeMat: THREE.LineBasicMaterial;
+  fill: THREE.Mesh;
+  tick: THREE.Sprite;
+  baseY: number;
+  phase: number;
+}
+
+interface WorldCtx {
+  root: THREE.Group;
+  payments: PaymentHandle[];
+  invoiceById: Map<string, InvoiceHandle>;
+  invoices: InvoiceHandle[];
+  reviewCount: number;
+  dispose: () => void;
+}
+
+function zoneRect(x0: number, x1: number, colorHex: string, title: string): THREE.Group {
+  const group = new THREE.Group();
+  const pts = [
+    new THREE.Vector3(x0, LANE_TOP, 0),
+    new THREE.Vector3(x1, LANE_TOP, 0),
+    new THREE.Vector3(x1, LANE_BOTTOM, 0),
+    new THREE.Vector3(x0, LANE_BOTTOM, 0),
+  ];
+  const rect = new THREE.LineLoop(
+    new THREE.BufferGeometry().setFromPoints(pts),
+    new THREE.LineBasicMaterial({ color: colorHex, transparent: true, opacity: 0.35 })
+  );
+  group.add(rect);
+  const label = makeLabel([{ text: title, px: 24, color: colorHex, bold: true }], "left", 0.85);
+  label.position.set(x0 + 0.15, LANE_TOP - 0.28, 0.05);
+  group.add(label);
+  return group;
+}
+
+function buildWorld(
+  scene: THREE.Scene,
+  payments: StripeCharge[],
+  invoices: Invoice[]
+): WorldCtx {
+  const root = new THREE.Group();
+  scene.add(root);
+
+  // Column headers
+  const payHeader = makeLabel(
+    [{ text: "STRIPE — INCOMING", px: 26, color: TEXT_DIM, bold: true }],
+    "left",
+    0.9
+  );
+  payHeader.position.set(PAY_X - 0.3, 4.35, 0);
+  root.add(payHeader);
+  const invHeader = makeLabel(
+    [{ text: "XERO — OPEN INVOICES", px: 26, color: TEXT_DIM, bold: true }],
+    "left",
+    0.9
+  );
+  invHeader.position.set(INV_X - CARD_W / 2, 4.35, 0);
+  root.add(invHeader);
+
+  // Lanes
+  root.add(zoneRect(-6.6, 1.7, FLAGGED, "REVIEW — NEEDS A HUMAN"));
+  root.add(zoneRect(2.7, 9.9, FEE, "EXPENSES — STRIPE FEES"));
+
+  // Payment nodes (left)
+  const sphereGeo = new THREE.SphereGeometry(0.28, 32, 32);
+  const paymentHandles: PaymentHandle[] = payments.map((p, i) => {
+    const group = new THREE.Group();
+    group.position.set(PAY_X, slotY(i), 0.3);
+    const mat = new THREE.MeshBasicMaterial({ color: ACCENT, transparent: true });
+    group.add(new THREE.Mesh(sphereGeo, mat));
+    const label = makeLabel([
+      { text: p.billing_details.name ?? "Unknown sender", px: 34, bold: true, mono: false },
+      {
+        text: `${gbp(p.amount)} · ${p.metadata.invoice_number ?? "no ref"}`,
+        px: 26,
+        color: TEXT_DIM,
+      },
+    ]);
+    label.position.set(0.5, 0, 0.05);
+    group.add(label);
+    root.add(group);
+    return { group, sphereMat: mat, label, baseY: slotY(i), phase: i * 0.9, busy: false };
+  });
+
+  // Invoice cards (right)
+  const cardGeo = new THREE.BoxGeometry(CARD_W, CARD_H, 0.12);
+  const edgesGeo = new THREE.EdgesGeometry(cardGeo);
+  const fillGeo = new THREE.BoxGeometry(FILL_W, 0.14, 0.06);
+  const invoiceHandles: InvoiceHandle[] = invoices.map((inv, i) => {
+    const group = new THREE.Group();
+    group.position.set(INV_X, slotY(i), 0);
+    const cardMat = new THREE.MeshBasicMaterial({ color: 0x161613 });
+    group.add(new THREE.Mesh(cardGeo, cardMat));
+    const edgeMat = new THREE.LineBasicMaterial({ color: TEXT, transparent: true, opacity: 0.4 });
+    group.add(new THREE.LineSegments(edgesGeo, edgeMat));
+
+    const label = makeLabel(
+      [
+        { text: `${inv.InvoiceNumber} · ${gbpPounds(inv.Total)}`, px: 30, bold: true },
+        { text: inv.Contact.Name, px: 24, color: TEXT_DIM, mono: false },
+      ],
+      "center"
+    );
+    label.position.z = 0.2;
+    group.add(label);
+
+    const fill = new THREE.Mesh(fillGeo, new THREE.MeshBasicMaterial({ color: FLAGGED }));
+    fill.position.set(0, -CARD_H / 2 + 0.17, 0.12);
+    fill.visible = false;
+    group.add(fill);
+
+    const tick = makeLabel([{ text: "✓", px: 44, color: MATCHED, bold: true }], "center");
+    tick.position.set(CARD_W / 2 - 0.42, 0, 0.25);
+    tick.visible = false;
+    group.add(tick);
+
+    root.add(group);
+    return { group, cardMat, edgeMat, fill, tick, baseY: slotY(i), phase: i * 0.7 + 0.4 };
+  });
+
+  return {
+    root,
+    payments: paymentHandles,
+    invoices: invoiceHandles,
+    invoiceById: new Map(invoices.map((inv, i) => [inv.InvoiceID, invoiceHandles[i]])),
+    reviewCount: 0,
+    dispose: () => {
+      scene.remove(root);
+      disposeDeep(root);
+    },
+  };
+}
+
+/* ---------------------------------------------------------------- */
+/* The component                                                     */
+
+interface Tween {
+  at: number;
+  dur: number;
+  ease: (t: number) => number;
+  apply: (k: number) => void;
+  onDone?: () => void;
+  done?: boolean;
+}
+
+function FlowInner({
+  payments,
+  invoices,
+  results,
+}: {
+  payments: StripeCharge[];
+  invoices: Invoice[];
+  results: (ReconcileResult | null)[];
+}) {
+  const containerRef = useRef<HTMLDivElement>(null);
+  const [failed, setFailed] = useState(false);
+  const animatedRef = useRef<Set<number>>(new Set());
+  const resultsRef = useRef(results);
+  resultsRef.current = results;
+  const syncRef = useRef<() => void>(() => {});
+
+  useEffect(() => {
+    const container = containerRef.current;
+    if (!container) return;
+
+    let renderer: THREE.WebGLRenderer;
+    try {
+      renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+    } catch (err) {
+      console.warn("3D flow disabled (WebGL unavailable):", err);
+      setFailed(true);
+      return;
+    }
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+    renderer.domElement.style.position = "absolute";
+    renderer.domElement.style.inset = "0";
+    container.appendChild(renderer.domElement);
+
+    const scene = new THREE.Scene();
+    const camera = new THREE.PerspectiveCamera(FOV, 2, 0.1, 100);
+    const t0 = performance.now();
+    const now = () => (performance.now() - t0) / 1000;
+
+    const state = {
+      tweens: [] as Tween[],
+      ctx: null as WorldCtx | null,
+      runStarted: false,
+      disposed: false,
+    };
+
+    const fit = () => {
+      const w = container.clientWidth || 1;
+      const h = container.clientHeight || 1;
+      renderer.setSize(w, h);
+      const aspect = w / h;
+      camera.aspect = aspect;
+      const t = Math.tan(THREE.MathUtils.degToRad(FOV / 2));
+      const z = Math.max(FRAME.halfH / t, FRAME.halfW / (t * aspect));
+      camera.position.set(FRAME.cx, FRAME.cy, z);
+      camera.lookAt(FRAME.cx, FRAME.cy, 0);
+      camera.updateProjectionMatrix();
+    };
+    fit();
+    const ro = new ResizeObserver(fit);
+    ro.observe(container);
+
+    const addTween = (
+      delay: number,
+      dur: number,
+      ease: (t: number) => number,
+      apply: (k: number) => void,
+      onDone?: () => void
+    ) => {
+      state.tweens.push({ at: now() + delay, dur, ease, apply, onDone });
+    };
+
+    const fadeSprite = (sprite: THREE.Sprite, to: number, dur: number, delay = 0) => {
+      const from = sprite.material.opacity;
+      addTween(delay, dur, linear, (k) => {
+        sprite.material.opacity = from + (to - from) * k;
+      });
+    };
+
+    const fadeTrail = (line: THREE.Line, delay = 0.35) => {
+      const mat = line.material as THREE.LineBasicMaterial;
+      const from = mat.opacity;
+      addTween(delay, 0.4, linear, (k) => (mat.opacity = from * (1 - k)), () => {
+        line.parent?.remove(line);
+        line.geometry.dispose();
+        mat.dispose();
+      });
+    };
+
+    const pulse = (delay: number, dur: number, targets: THREE.Object3D[]) => {
+      addTween(delay, dur, linear, (k) => {
+        const s = 1 + Math.abs(Math.sin(k * Math.PI * 2)) * 0.18;
+        for (const o of targets) o.scale.setScalar(s);
+      });
+    };
+
+    const popSprite = (sprite: THREE.Sprite, delay: number) => {
+      const base = sprite.userData.baseScale as THREE.Vector3;
+      addTween(delay, 0.45, easeOutBack, (k) => {
+        sprite.visible = true;
+        sprite.scale.copy(base).multiplyScalar(Math.max(k, 0.001));
+      });
+    };
+
+    /* ---- choreography: one routine per decision type ---- */
+
+    const trigger = (i: number, result: ReconcileResult) => {
+      const ctx = state.ctx;
+      if (!ctx) return;
+      state.runStarted = true;
+      const p = ctx.payments[i];
+      p.busy = true;
+      const d = result.decision;
+      const from = new THREE.Vector3(PAY_X, p.baseY, 0.3);
+      p.group.position.copy(from);
+      const root = ctx.root;
+
+      if (d.type === "DUPLICATE") {
+        // Recognised (flash) → dissolves in place. Never travels, never writes.
+        const cAccent = new THREE.Color(ACCENT);
+        const cWhite = new THREE.Color("#ffffff");
+        addTween(0, 0.55, linear, (k) => {
+          p.sphereMat.color.lerpColors(cAccent, cWhite, Math.abs(Math.sin(k * Math.PI * 3)));
+        });
+        addTween(0.55, 0.6, easeInOut, (k) => {
+          p.group.scale.setScalar(1 - 0.65 * k);
+          p.sphereMat.opacity = 1 - 0.92 * k;
+        });
+        fadeSprite(p.label, 0, 0.45, 0.55);
+        const dup = makeLabel(
+          [{ text: "duplicate · skipped", px: 28, color: TEXT_DIM, bold: true }],
+          "left",
+          0
+        );
+        dup.position.set(PAY_X + 0.5, p.baseY, 0.4);
+        root.add(dup);
+        fadeSprite(dup, 1, 0.4, 0.7);
+        return;
+      }
+
+      if (d.type === "NO_MATCH") {
+        // Heads for the invoice column, finds no target, slows, drifts to review.
+        const slot = REVIEW_SLOTS[ctx.reviewCount++ % REVIEW_SLOTS.length];
+        const mid = new THREE.Vector3(1.2, p.baseY - 0.5, 0.3);
+        const end = new THREE.Vector3(slot.x, slot.y, 0.3);
+        const ctrl = new THREE.Vector3(mid.x + 0.6, (mid.y + end.y) / 2 - 0.4, 0.3);
+        const trail = makeTrail(root, from);
+        const cAccent = new THREE.Color(ACCENT);
+        const cFlag = new THREE.Color(FLAGGED);
+        addTween(0, 0.9, easeOut, (k) => {
+          p.group.position.lerpVectors(from, mid, k);
+          setTrailEnd(trail, from, p.group.position);
+        });
+        addTween(1.0, 0.9, easeInOut, (k) => {
+          bezier(p.group.position, mid, ctrl, end, k);
+          p.sphereMat.color.lerpColors(cAccent, cFlag, k);
+          setTrailEnd(trail, from, p.group.position);
+        }, () => fadeTrail(trail));
+        pulse(1.95, 0.6, [p.group]);
+        return;
+      }
+
+      // MATCH / FEE_SPLIT / PARTIAL all travel to a real invoice card first.
+      const inv = d.invoice ? ctx.invoiceById.get(d.invoice.InvoiceID) : undefined;
+      if (!inv) return;
+      const dock = new THREE.Vector3(DOCK_X, inv.baseY, 0.3);
+      const trail = makeTrail(root, from);
+      addTween(0, 0.75, easeInOut, (k) => {
+        p.group.position.lerpVectors(from, dock, k);
+        setTrailEnd(trail, from, p.group.position);
+      }, () => fadeTrail(trail));
+
+      if (d.type === "MATCH" || d.type === "FEE_SPLIT") {
+        // Snap on: both pulse teal, paid tick pops on the card.
+        addTween(0.75, 0.01, linear, () => {
+          p.sphereMat.color.set(MATCHED);
+          inv.cardMat.color.set(0x0d2a1f);
+          inv.edgeMat.color.set(MATCHED);
+          inv.edgeMat.opacity = 0.95;
+        });
+        fadeSprite(p.label, 0, 0.35, 0.75);
+        pulse(0.78, 0.65, [p.group, inv.group]);
+        popSprite(inv.tick, 0.95);
+
+        if (d.type === "FEE_SPLIT" && d.feeAmount) {
+          // A smaller amber node peels off mid-flight to the expenses lane.
+          const feeGroup = new THREE.Group();
+          const feeMat = new THREE.MeshBasicMaterial({ color: FEE, transparent: true });
+          feeGroup.add(new THREE.Mesh(new THREE.SphereGeometry(0.17, 24, 24), feeMat));
+          const feeLabel = makeLabel([
+            { text: `fee ${gbpPounds(d.feeAmount)}`, px: 26, color: FEE, bold: true },
+          ]);
+          feeLabel.position.set(0.34, 0, 0.05);
+          feeGroup.add(feeLabel);
+          const end = new THREE.Vector3(EXPENSE_SLOT.x, EXPENSE_SLOT.y, 0.3);
+          let start: THREE.Vector3 | null = null;
+          let ctrl: THREE.Vector3 | null = null;
+          addTween(0.3, 0.95, easeInOut, (k) => {
+            if (!start || !ctrl) {
+              start = p.group.position.clone();
+              ctrl = new THREE.Vector3(start.x + 1.4, (start.y + end.y) / 2 - 0.8, 0.3);
+              feeGroup.position.copy(start);
+              root.add(feeGroup);
+            }
+            bezier(feeGroup.position, start, ctrl, end, k);
+          }, () => pulse(0, 0.5, [feeGroup]));
+        }
+        return;
+      }
+
+      // PARTIAL: reaches the invoice, only part-fills it, then drifts to review.
+      // Label ducks out while docked (so it never overlaps the card text) and
+      // returns once the node is in the review lane.
+      fadeSprite(p.label, 0, 0.3, 0.5);
+      fadeSprite(p.label, 1, 0.4, 2.4);
+      const frac = Math.min(d.payment.amount / 100 / (d.invoice?.Total ?? 1), 1);
+      addTween(0.85, 0.6, easeInOut, (k) => {
+        inv.fill.visible = true;
+        const s = Math.max(frac * k, 0.001);
+        inv.fill.scale.x = s;
+        inv.fill.position.x = -FILL_W / 2 + (FILL_W * s) / 2;
+      });
+      const slot = REVIEW_SLOTS[ctx.reviewCount++ % REVIEW_SLOTS.length];
+      const end = new THREE.Vector3(slot.x, slot.y, 0.3);
+      const ctrl = new THREE.Vector3(dock.x - 2.2, (dock.y + end.y) / 2, 0.3);
+      const cFlag = new THREE.Color(FLAGGED);
+      addTween(1.9, 0.9, easeInOut, (k) => {
+        bezier(p.group.position, dock, ctrl, end, k);
+        if (k > 0) p.sphereMat.color.lerp(cFlag, Math.min(k * 2, 1));
+      });
+      pulse(2.85, 0.6, [p.group]);
+    };
+
+    /* ---- world lifecycle ---- */
+
+    const resetWorld = () => {
+      state.tweens = [];
+      state.runStarted = false;
+      state.ctx?.dispose();
+      state.ctx = buildWorld(scene, payments, invoices);
+      animatedRef.current.clear();
+    };
+
+    const sync = () => {
+      if (state.disposed || !state.ctx) return;
+      const rs = resultsRef.current;
+      if (rs.every((r) => r === null)) {
+        if (animatedRef.current.size > 0) resetWorld();
+        return;
+      }
+      rs.forEach((r, i) => {
+        if (r && !animatedRef.current.has(i)) {
+          animatedRef.current.add(i);
+          trigger(i, r);
+        }
+      });
+    };
+    syncRef.current = sync;
+
+    let raf = 0;
+    const animate = () => {
+      raf = requestAnimationFrame(animate);
+      const t = now();
+      for (const tw of state.tweens) {
+        if (t < tw.at) continue;
+        const k = Math.min(1, (t - tw.at) / tw.dur);
+        tw.apply(tw.ease(k));
+        if (k >= 1) {
+          tw.done = true;
+          tw.onDone?.();
+        }
+      }
+      if (state.tweens.some((tw) => tw.done)) {
+        state.tweens = state.tweens.filter((tw) => !tw.done);
+      }
+      const ctx = state.ctx;
+      if (ctx) {
+        // Idle float — payments drift gently until the agent picks them up.
+        for (const p of ctx.payments) {
+          if (!p.busy) p.group.position.y = p.baseY + Math.sin(t * 1.1 + p.phase) * 0.06;
+        }
+        if (!state.runStarted) {
+          for (const inv of ctx.invoices) {
+            inv.group.position.y = inv.baseY + Math.sin(t * 0.9 + inv.phase) * 0.035;
+          }
+        }
+      }
+      renderer.render(scene, camera);
+    };
+
+    // Fonts must be ready before labels are drawn to canvas textures.
+    let cancelled = false;
+    document.fonts.ready.then(() => {
+      if (cancelled) return;
+      state.ctx = buildWorld(scene, payments, invoices);
+      sync(); // catch up if a run started before fonts resolved
+      animate();
+    });
+
+    return () => {
+      cancelled = true;
+      state.disposed = true;
+      syncRef.current = () => {};
+      cancelAnimationFrame(raf);
+      ro.disconnect();
+      state.ctx?.dispose();
+      renderer.dispose();
+      renderer.domElement.remove();
+    };
+    // Mount-only: payments/invoices are the seeded demo world and never change identity mid-session.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // Drive animations from the same revealed results the dashboard renders.
+  useEffect(() => {
+    syncRef.current();
+  }, [results]);
+
+  if (failed) return null;
+
+  return (
+    <section className="mt-10 hidden md:block">
+      <div
+        ref={containerRef}
+        className="relative h-[62vh] max-h-[640px] min-h-[460px] w-full overflow-hidden border border-[#f5f0e6]/15 bg-[#0d0d0c]"
+      >
+        <div className="pointer-events-none absolute bottom-3 left-4 font-mono text-xs uppercase tracking-widest opacity-50">
+          Agent flow — every node follows the agent&apos;s real decision
+        </div>
+      </div>
+      <div className="mt-2 flex flex-wrap gap-x-6 gap-y-1 font-mono text-xs opacity-70">
+        <LegendDot color={MATCHED} label="matched · paid" />
+        <LegendDot color={FEE} label="fee split to expense" />
+        <LegendDot color={FLAGGED} label="flagged for review" />
+        <LegendDot color={TEXT_DIM} label="duplicate · skipped" hollow />
+      </div>
+    </section>
+  );
+}
+
+function LegendDot({ color, label, hollow }: { color: string; label: string; hollow?: boolean }) {
+  return (
+    <span className="flex items-center gap-2">
+      <span
+        className="inline-block h-2.5 w-2.5 rounded-full"
+        style={hollow ? { border: `1.5px dashed ${color}` } : { background: color }}
+      />
+      {label}
+    </span>
+  );
+}
+
+class FlowErrorBoundary extends Component<{ children: ReactNode }, { failed: boolean }> {
+  state = { failed: false };
+  static getDerivedStateFromError() {
+    return { failed: true };
+  }
+  componentDidCatch(err: unknown) {
+    console.warn("3D flow disabled:", err);
+  }
+  render() {
+    return this.state.failed ? null : this.props.children;
+  }
+}
+
+export default function ReconcileFlow(props: {
+  payments: StripeCharge[];
+  invoices: Invoice[];
+  results: (ReconcileResult | null)[];
+}) {
+  return (
+    <FlowErrorBoundary>
+      <FlowInner {...props} />
+    </FlowErrorBoundary>
+  );
+}

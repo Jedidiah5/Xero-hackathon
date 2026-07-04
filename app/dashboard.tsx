@@ -4,6 +4,7 @@ import { useMemo, useRef, useState } from "react";
 import type { BankTransaction, Invoice } from "@/lib/xero/types";
 import type { StripeCharge } from "@/lib/stripe/types";
 import type { ReconcileResult } from "@/lib/agent/reconcile";
+import ReconcileFlow from "./reconcile-flow";
 
 const REVEAL_MS = 750; // stagger between row outcomes — legibility over speed
 
@@ -129,6 +130,15 @@ export default function Dashboard({
           {running ? "Running…" : hasRun ? "Replay" : "Run agent"}
         </button>
       </div>
+
+      {/* Three.js hero — additive layer driven by the same `results` the rows
+          render, so the flow and the numbers can never disagree. Removable
+          without touching Stage 3. */}
+      <ReconcileFlow
+        payments={initialPayments}
+        invoices={initialInvoices}
+        results={results}
+      />
 
       {/* Stat row */}
       <div className="mt-10 grid grid-cols-2 gap-4 md:grid-cols-4">
