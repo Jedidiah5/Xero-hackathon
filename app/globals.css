@@ -1,17 +1,19 @@
 @import "tailwindcss";
 
-/* Dark editorial palette — CLAUDE.md section 7 */
+/* Light, happy palette — warm cream + white cards + cheerful violet accent */
 :root {
-  --background: #0a0a0a;
-  --foreground: #f5f0e6;
-  --accent: #c8ff00;
-  --matched: #1d9e75;
-  --fee: #eda100;
-  --flagged: #d85a30;
+  --background: #faf6ef;
+  --surface: #ffffff;
+  --foreground: #26221b;
+  --accent: #6c4df6;
+  --matched: #0fa36b;
+  --fee: #f59e0b;
+  --flagged: #e8553a;
 }
 
 @theme inline {
   --color-background: var(--background);
+  --color-surface: var(--surface);
   --color-foreground: var(--foreground);
   --color-accent: var(--accent);
   --color-matched: var(--matched);

@@ -8,6 +8,13 @@ import ReconcileFlow from "./reconcile-flow";
 
 const REVEAL_MS = 750; // stagger between row outcomes — legibility over speed
 
+// Light theme palette (matches globals.css + the 3D flow)
+const INK = "#26221b";
+const ACCENT = "#6c4df6";
+const MATCHED = "#0fa36b";
+const FEE = "#d97706";
+const FLAGGED = "#e8553a";
+
 const gbp = (pence: number) =>
   (pence / 100).toLocaleString("en-GB", { style: "currency", currency: "GBP" });
 const gbpPounds = (pounds: number) =>
@@ -111,12 +118,12 @@ export default function Dashboard({
   };
 
   return (
-    <main className="min-h-screen px-8 py-10 text-[#f5f0e6]">
+    <main className="min-h-screen px-8 py-10 text-[#26221b]">
       {/* Header */}
       <div className="flex flex-wrap items-end justify-between gap-6">
         <div>
           <h1 className="font-sans text-4xl font-bold tracking-tight">
-            Ledger<span className="text-[#c8ff00]">.</span>
+            Ledger<span className="text-[#6c4df6]">.</span>
           </h1>
           <p className="mt-1 font-mono text-sm opacity-60">
             AI reconciliation agent · Stripe → Xero · provider: mock
@@ -125,7 +132,7 @@ export default function Dashboard({
         <button
           onClick={run}
           disabled={running}
-          className="bg-[#c8ff00] px-8 py-3 font-mono text-sm font-bold uppercase tracking-widest text-[#0a0a0a] transition-opacity hover:opacity-85 disabled:opacity-40"
+          className="rounded-full bg-[#6c4df6] px-8 py-3 font-mono text-sm font-bold uppercase tracking-widest text-white shadow-[0_6px_20px_rgba(108,77,246,0.35)] transition-all hover:-translate-y-0.5 hover:bg-[#5a3ded] hover:shadow-[0_8px_24px_rgba(108,77,246,0.45)] disabled:translate-y-0 disabled:opacity-50 disabled:shadow-none"
         >
           {running ? "Running…" : hasRun ? "Replay" : "Run agent"}
         </button>
@@ -145,25 +152,25 @@ export default function Dashboard({
         <StatCard
           label="Incoming"
           value={initialPayments.length}
-          color="#f5f0e6"
+          color={INK}
           sub={skippedItems.length > 0 ? `${skippedItems.length} duplicate skipped` : undefined}
         />
-        <StatCard label="Reconciled" value={matchedCount + feeSplitCount} color="#1d9e75" />
-        <StatCard label="Fees split" value={feeSplitCount} color="#eda100" />
-        <StatCard label="Flagged" value={flaggedItems.length} color="#d85a30" />
+        <StatCard label="Reconciled" value={matchedCount + feeSplitCount} color={MATCHED} />
+        <StatCard label="Fees split" value={feeSplitCount} color={FEE} />
+        <StatCard label="Flagged" value={flaggedItems.length} color={FLAGGED} />
       </div>
 
       {/* Payment list */}
       <section className="mt-12">
         <h2 className="font-sans text-xl font-bold">Incoming payments</h2>
-        <div className="mt-4 border-t border-[#f5f0e6]/15">
+        <div className="mt-4 overflow-hidden rounded-2xl bg-white shadow-[0_2px_16px_rgba(38,34,27,0.06)]">
           {initialPayments.map((p, i) => {
             const decision = results[i]?.decision ?? null;
             const isDuplicate = decision?.type === "DUPLICATE";
             return (
               <div
                 key={`${p.id}-${i}`}
-                className="grid grid-cols-[2rem_1fr_auto] items-baseline gap-x-6 gap-y-1 border-b border-[#f5f0e6]/10 py-4 transition-opacity md:grid-cols-[2rem_14rem_8rem_8rem_1fr]"
+                className="grid grid-cols-[2rem_1fr_auto] items-baseline gap-x-6 gap-y-1 border-b border-[#26221b]/8 px-6 py-4 transition-opacity last:border-b-0 md:grid-cols-[2rem_14rem_8rem_8rem_1fr]"
                 style={isDuplicate ? { opacity: 0.45 } : undefined}
               >
                 <span className="font-mono text-sm opacity-40">{i + 1}</span>
@@ -176,17 +183,17 @@ export default function Dashboard({
                 </span>
                 <span className="col-span-3 md:col-span-1">
                   {decision === null ? (
-                    <StatusChip label="Pending" color="#f5f0e6" dim />
+                    <StatusChip label="Pending" color={INK} dim />
                   ) : decision.type === "MATCH" ? (
-                    <Outcome chip="Matched" color="#1d9e75" reason={decision.reason} />
+                    <Outcome chip="Matched" color={MATCHED} reason={decision.reason} />
                   ) : decision.type === "FEE_SPLIT" ? (
-                    <Outcome chip="Fee split" color="#eda100" reason={decision.reason} />
+                    <Outcome chip="Fee split" color={FEE} reason={decision.reason} />
                   ) : decision.type === "PARTIAL" ? (
-                    <Outcome chip="Partial" color="#d85a30" reason={decision.reason} />
+                    <Outcome chip="Partial" color={FLAGGED} reason={decision.reason} />
                   ) : decision.type === "NO_MATCH" ? (
-                    <Outcome chip="No match" color="#d85a30" reason={decision.reason} />
+                    <Outcome chip="No match" color={FLAGGED} reason={decision.reason} />
                   ) : (
-                    <Outcome chip="Skipped · duplicate" color="#f5f0e6" reason={decision.reason} dashed />
+                    <Outcome chip="Skipped · duplicate" color={INK} reason={decision.reason} dashed />
                   )}
                 </span>
               </div>
@@ -205,7 +212,7 @@ export default function Dashboard({
         </h2>
         <div className="mt-4 space-y-3">
           {flaggedItems.length === 0 ? (
-            <div className="border-t border-b border-[#f5f0e6]/10 py-3 font-mono text-sm opacity-35">
+            <div className="rounded-2xl bg-white px-6 py-4 font-mono text-sm opacity-40 shadow-[0_2px_16px_rgba(38,34,27,0.06)]">
               — nothing flagged yet
             </div>
           ) : (
@@ -214,7 +221,7 @@ export default function Dashboard({
               return (
                 <div
                   key={item.index}
-                  className="border-l-4 border-[#d85a30] bg-[#d85a30]/5 p-4"
+                  className="rounded-2xl border-l-4 border-[#e8553a] bg-[#e8553a]/6 p-5 shadow-[0_2px_16px_rgba(38,34,27,0.05)]"
                 >
                   <div className="flex flex-wrap items-baseline justify-between gap-x-6 gap-y-2">
                     <div>
@@ -224,12 +231,12 @@ export default function Dashboard({
                       <span className="ml-4 font-mono text-base">{gbp(item.payment.amount)}</span>
                       <StatusChip
                         label={item.decision.type === "PARTIAL" ? "Partial" : "No match"}
-                        color="#d85a30"
+                        color={FLAGGED}
                         className="ml-4"
                       />
                     </div>
                     {acted ? (
-                      <span className="font-mono text-xs uppercase tracking-widest text-[#c8ff00]">
+                      <span className="font-mono text-xs font-bold uppercase tracking-widest text-[#6c4df6]">
                         {acted === "approved" ? "Approved ✓" : "Reassigned →"}
                       </span>
                     ) : (
@@ -249,7 +256,7 @@ export default function Dashboard({
                       </div>
                     )}
                   </div>
-                  <p className="mt-2 font-mono text-xs text-[#d85a30]">{item.decision.reason}</p>
+                  <p className="mt-2 font-mono text-xs text-[#c8462e]">{item.decision.reason}</p>
                 </div>
               );
             })
@@ -259,14 +266,14 @@ export default function Dashboard({
           {skippedItems.map((item) => (
             <div
               key={item.index}
-              className="border border-dashed border-[#f5f0e6]/30 p-4 opacity-60"
+              className="rounded-2xl border border-dashed border-[#26221b]/25 bg-white/60 p-5 opacity-70"
             >
               <div className="flex flex-wrap items-baseline gap-x-6 gap-y-1">
                 <span className="font-sans text-base">
                   {item.payment.billing_details.name ?? "Unknown sender"}
                 </span>
                 <span className="font-mono text-base">{gbp(item.payment.amount)}</span>
-                <StatusChip label="Skipped" color="#f5f0e6" dim />
+                <StatusChip label="Skipped" color={INK} dim />
               </div>
               <p className="mt-2 font-mono text-xs opacity-70">{item.decision.reason}</p>
             </div>
@@ -282,13 +289,13 @@ export default function Dashboard({
             GET /Invoices · cached once per run
           </span>
         </h2>
-        <div className="mt-4 border-t border-[#f5f0e6]/15">
+        <div className="mt-4 overflow-hidden rounded-2xl bg-white shadow-[0_2px_16px_rgba(38,34,27,0.06)]">
           {initialInvoices.map((inv) => {
             const paid = paidInvoiceIds.has(inv.InvoiceID);
             return (
               <div
                 key={inv.InvoiceID}
-                className="grid grid-cols-[8rem_1fr_8rem_8rem_auto] items-baseline gap-x-6 border-b border-[#f5f0e6]/10 py-3"
+                className="grid grid-cols-[8rem_1fr_8rem_8rem_auto] items-baseline gap-x-6 border-b border-[#26221b]/8 px-6 py-3 last:border-b-0"
               >
                 <span className="font-mono text-sm">{inv.InvoiceNumber}</span>
                 <span className="font-sans text-base">{inv.Contact.Name}</span>
@@ -297,9 +304,9 @@ export default function Dashboard({
                   due {paid ? gbpPounds(0) : gbpPounds(inv.AmountDue)}
                 </span>
                 {paid ? (
-                  <StatusChip label="Paid ✓" color="#1d9e75" />
+                  <StatusChip label="Paid ✓" color={MATCHED} />
                 ) : (
-                  <StatusChip label="Open" color="#f5f0e6" dim />
+                  <StatusChip label="Open" color={INK} dim />
                 )}
               </div>
             );
@@ -315,23 +322,23 @@ export default function Dashboard({
             POST /BankTransactions · spend money
           </span>
         </h2>
-        <div className="mt-4 border-t border-[#f5f0e6]/15">
+        <div className="mt-4 overflow-hidden rounded-2xl bg-white shadow-[0_2px_16px_rgba(38,34,27,0.06)]">
           {visibleTxns.length === 0 ? (
-            <div className="border-b border-[#f5f0e6]/10 py-3 font-mono text-sm opacity-35">
-              — none booked yet
-            </div>
+            <div className="px-6 py-4 font-mono text-sm opacity-40">— none booked yet</div>
           ) : (
             visibleTxns.map((bt) => (
               <div
                 key={bt.BankTransactionID}
-                className="grid grid-cols-[1fr_10rem_8rem_auto] items-baseline gap-x-6 border-b border-[#f5f0e6]/10 py-3"
+                className="grid grid-cols-[1fr_10rem_8rem_auto] items-baseline gap-x-6 border-b border-[#26221b]/8 px-6 py-3 last:border-b-0"
               >
                 <span className="font-sans text-base">{bt.LineItems[0].Description}</span>
                 <span className="font-mono text-sm opacity-60">
                   {bt.LineItems[0].AccountCode} · Bank Fees
                 </span>
-                <span className="font-mono text-sm text-[#eda100]">{gbpPounds(bt.Total)}</span>
-                <StatusChip label="Booked" color="#eda100" />
+                <span className="font-mono text-sm font-bold text-[#d97706]">
+                  {gbpPounds(bt.Total)}
+                </span>
+                <StatusChip label="Booked" color={FEE} />
               </div>
             ))
           )}
@@ -353,7 +360,7 @@ function StatCard({
   sub?: string;
 }) {
   return (
-    <div className="border border-[#f5f0e6]/15 p-5">
+    <div className="rounded-2xl bg-white p-5 shadow-[0_2px_16px_rgba(38,34,27,0.06)]">
       <div className="font-mono text-xs uppercase tracking-widest opacity-50">{label}</div>
       <div className="mt-2 font-mono text-5xl font-bold" style={{ color }}>
         {value}
@@ -399,11 +406,12 @@ function StatusChip({
 }) {
   return (
     <span
-      className={`inline-block border px-2 py-0.5 font-mono text-xs uppercase tracking-widest ${className ?? ""}`}
+      className={`inline-block rounded-full border px-3 py-0.5 font-mono text-xs font-bold uppercase tracking-widest ${className ?? ""}`}
       style={{
         color,
-        borderColor: color,
-        opacity: dim ? 0.35 : 1,
+        borderColor: `${color}66`,
+        background: dim ? "transparent" : `${color}14`,
+        opacity: dim ? 0.4 : 1,
         borderStyle: dashed ? "dashed" : "solid",
       }}
     >
@@ -416,7 +424,7 @@ function QueueButton({ label, onClick }: { label: string; onClick: () => void })
   return (
     <button
       onClick={onClick}
-      className="border border-[#f5f0e6]/40 px-4 py-1.5 font-mono text-xs uppercase tracking-widest transition-colors hover:border-[#c8ff00] hover:text-[#c8ff00]"
+      className="rounded-full border border-[#26221b]/25 bg-white px-4 py-1.5 font-mono text-xs font-bold uppercase tracking-widest transition-colors hover:border-[#6c4df6] hover:text-[#6c4df6]"
     >
       {label}
     </button>

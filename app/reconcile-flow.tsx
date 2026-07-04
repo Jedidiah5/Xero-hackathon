@@ -14,12 +14,12 @@ import type { ReconcileResult } from "@/lib/agent/reconcile";
 /* ---------------------------------------------------------------- */
 /* Palette + layout (world units)                                    */
 
-const TEXT = "#f5f0e6";
-const TEXT_DIM = "#a8a396";
-const ACCENT = "#c8ff00";
-const MATCHED = "#1d9e75";
-const FEE = "#eda100";
-const FLAGGED = "#d85a30";
+const TEXT = "#26221b";
+const TEXT_DIM = "#958e80";
+const ACCENT = "#6c4df6";
+const MATCHED = "#0fa36b";
+const FEE = "#f59e0b";
+const FLAGGED = "#e8553a";
 
 const PAY_X = -8;
 const INV_X = 8;
@@ -147,7 +147,7 @@ function disposeDeep(obj: THREE.Object3D) {
 
 function makeTrail(parent: THREE.Object3D, from: THREE.Vector3): THREE.Line {
   const geo = new THREE.BufferGeometry().setFromPoints([from.clone(), from.clone()]);
-  const mat = new THREE.LineBasicMaterial({ color: TEXT, transparent: true, opacity: 0.22 });
+  const mat = new THREE.LineBasicMaterial({ color: TEXT, transparent: true, opacity: 0.28 });
   const line = new THREE.Line(geo, mat);
   parent.add(line);
   return line;
@@ -216,7 +216,7 @@ function zoneRect(x0: number, x1: number, colorHex: string, title: string): THRE
   ];
   const rect = new THREE.LineLoop(
     new THREE.BufferGeometry().setFromPoints(pts),
-    new THREE.LineBasicMaterial({ color: colorHex, transparent: true, opacity: 0.35 })
+    new THREE.LineBasicMaterial({ color: colorHex, transparent: true, opacity: 0.55 })
   );
   group.add(rect);
   const label = makeLabel([{ text: title, px: 24, color: colorHex, bold: true }], "left", 0.85);
@@ -251,7 +251,7 @@ function buildWorld(
 
   // Lanes
   root.add(zoneRect(-6.6, 1.7, FLAGGED, "REVIEW — NEEDS A HUMAN"));
-  root.add(zoneRect(2.7, 9.9, FEE, "EXPENSES — STRIPE FEES"));
+  root.add(zoneRect(2.7, 9.9, "#d97706", "EXPENSES — STRIPE FEES"));
 
   // Payment nodes (left)
   const sphereGeo = new THREE.SphereGeometry(0.28, 32, 32);
@@ -281,9 +281,9 @@ function buildWorld(
   const invoiceHandles: InvoiceHandle[] = invoices.map((inv, i) => {
     const group = new THREE.Group();
     group.position.set(INV_X, slotY(i), 0);
-    const cardMat = new THREE.MeshBasicMaterial({ color: 0x161613 });
+    const cardMat = new THREE.MeshBasicMaterial({ color: 0xffffff });
     group.add(new THREE.Mesh(cardGeo, cardMat));
-    const edgeMat = new THREE.LineBasicMaterial({ color: TEXT, transparent: true, opacity: 0.4 });
+    const edgeMat = new THREE.LineBasicMaterial({ color: TEXT, transparent: true, opacity: 0.3 });
     group.add(new THREE.LineSegments(edgesGeo, edgeMat));
 
     const label = makeLabel(
@@ -454,9 +454,9 @@ function FlowInner({
       if (d.type === "DUPLICATE") {
         // Recognised (flash) → dissolves in place. Never travels, never writes.
         const cAccent = new THREE.Color(ACCENT);
-        const cWhite = new THREE.Color("#ffffff");
+        const cFlash = new THREE.Color("#26221b");
         addTween(0, 0.55, linear, (k) => {
-          p.sphereMat.color.lerpColors(cAccent, cWhite, Math.abs(Math.sin(k * Math.PI * 3)));
+          p.sphereMat.color.lerpColors(cAccent, cFlash, Math.abs(Math.sin(k * Math.PI * 3)));
         });
         addTween(0.55, 0.6, easeInOut, (k) => {
           p.group.scale.setScalar(1 - 0.65 * k);
@@ -510,7 +510,7 @@ function FlowInner({
         // Snap on: both pulse teal, paid tick pops on the card.
         addTween(0.75, 0.01, linear, () => {
           p.sphereMat.color.set(MATCHED);
-          inv.cardMat.color.set(0x0d2a1f);
+          inv.cardMat.color.set(0xe2f6ec);
           inv.edgeMat.color.set(MATCHED);
           inv.edgeMat.opacity = 0.95;
         });
@@ -524,7 +524,7 @@ function FlowInner({
           const feeMat = new THREE.MeshBasicMaterial({ color: FEE, transparent: true });
           feeGroup.add(new THREE.Mesh(new THREE.SphereGeometry(0.17, 24, 24), feeMat));
           const feeLabel = makeLabel([
-            { text: `fee ${gbpPounds(d.feeAmount)}`, px: 26, color: FEE, bold: true },
+            { text: `fee ${gbpPounds(d.feeAmount)}`, px: 26, color: "#d97706", bold: true },
           ]);
           feeLabel.position.set(0.34, 0, 0.05);
           feeGroup.add(feeLabel);
@@ -658,7 +658,7 @@ function FlowInner({
     <section className="mt-10 hidden md:block">
       <div
         ref={containerRef}
-        className="relative h-[62vh] max-h-[640px] min-h-[460px] w-full overflow-hidden border border-[#f5f0e6]/15 bg-[#0d0d0c]"
+        className="relative h-[62vh] max-h-[640px] min-h-[460px] w-full overflow-hidden rounded-2xl bg-white shadow-[0_2px_16px_rgba(38,34,27,0.06)]"
       >
         <div className="pointer-events-none absolute bottom-3 left-4 font-mono text-xs uppercase tracking-widest opacity-50">
           Agent flow — every node follows the agent&apos;s real decision
