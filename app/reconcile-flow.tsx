@@ -23,11 +23,12 @@ const FLAGGED = "#e8553a";
 
 const PAY_X = -8;
 const INV_X = 8;
-const CARD_W = 3.6;
+const CARD_W = 3.4;
 const CARD_H = 0.85;
 const FILL_W = CARD_W - 0.24;
 const DOCK_X = INV_X - CARD_W / 2 - 0.38; // sphere docks on the card's left edge
 const slotY = (i: number) => 3.4 - i * 1.15;
+const TRAIL_OPACITY = 0.28;
 
 const REVIEW_SLOTS = [
   { x: -5.9, y: -4.45 },
@@ -38,7 +39,9 @@ const LANE_TOP = -3.7;
 const LANE_BOTTOM = -5.15;
 
 // Camera framing: fit this world box whatever the container aspect is.
-const FRAME = { cx: 0.7, cy: -0.35, halfW: 9.9, halfH: 5.2 };
+// halfW leaves >1 world unit beyond the invoice cards' pulsed extent so
+// nothing can clip the right edge at any aspect ratio.
+const FRAME = { cx: 0.7, cy: -0.35, halfW: 10.35, halfH: 5.2 };
 const FOV = 42;
 
 const gbp = (pence: number) =>
@@ -145,19 +148,36 @@ function disposeDeep(obj: THREE.Object3D) {
   });
 }
 
-function makeTrail(parent: THREE.Object3D, from: THREE.Vector3): THREE.Line {
+// Connector trails are ephemeral by contract: each one is registered on the
+// world with a fixed time-to-live and swept by the render loop every frame.
+// Their removal never depends on a tween callback running, so no state
+// (mid-run reset, replay, cleared tween queue) can orphan a line.
+interface TrailHandle {
+  line: THREE.Line;
+  from: THREE.Vector3;
+  bornAt: number;
+  ttl: number;
+}
+
+function makeTrailLine(parent: THREE.Object3D, from: THREE.Vector3): THREE.Line {
   const geo = new THREE.BufferGeometry().setFromPoints([from.clone(), from.clone()]);
-  const mat = new THREE.LineBasicMaterial({ color: TEXT, transparent: true, opacity: 0.28 });
+  const mat = new THREE.LineBasicMaterial({ color: TEXT, transparent: true, opacity: TRAIL_OPACITY });
   const line = new THREE.Line(geo, mat);
   parent.add(line);
   return line;
 }
 
-function setTrailEnd(line: THREE.Line, from: THREE.Vector3, end: THREE.Vector3) {
-  const pos = line.geometry.getAttribute("position") as THREE.BufferAttribute;
-  pos.setXYZ(0, from.x, from.y, from.z);
+function setTrailEnd(trail: TrailHandle, end: THREE.Vector3) {
+  const pos = trail.line.geometry.getAttribute("position") as THREE.BufferAttribute;
+  pos.setXYZ(0, trail.from.x, trail.from.y, trail.from.z);
   pos.setXYZ(1, end.x, end.y, end.z);
   pos.needsUpdate = true;
+}
+
+function removeTrail(trail: TrailHandle) {
+  trail.line.parent?.remove(trail.line);
+  trail.line.geometry.dispose();
+  (trail.line.material as THREE.Material).dispose();
 }
 
 const bezier = (
@@ -202,6 +222,7 @@ interface WorldCtx {
   payments: PaymentHandle[];
   invoiceById: Map<string, InvoiceHandle>;
   invoices: InvoiceHandle[];
+  trails: TrailHandle[];
   reviewCount: number;
   dispose: () => void;
 }
@@ -310,17 +331,21 @@ function buildWorld(
     return { group, cardMat, edgeMat, fill, tick, baseY: slotY(i), phase: i * 0.7 + 0.4 };
   });
 
-  return {
+  const ctx: WorldCtx = {
     root,
     payments: paymentHandles,
     invoices: invoiceHandles,
     invoiceById: new Map(invoices.map((inv, i) => [inv.InvoiceID, invoiceHandles[i]])),
+    trails: [],
     reviewCount: 0,
     dispose: () => {
+      ctx.trails.forEach(removeTrail);
+      ctx.trails = [];
       scene.remove(root);
       disposeDeep(root);
     },
   };
+  return ctx;
 }
 
 /* ---------------------------------------------------------------- */
@@ -413,19 +438,23 @@ function FlowInner({
       });
     };
 
-    const fadeTrail = (line: THREE.Line, delay = 0.35) => {
-      const mat = line.material as THREE.LineBasicMaterial;
-      const from = mat.opacity;
-      addTween(delay, 0.4, linear, (k) => (mat.opacity = from * (1 - k)), () => {
-        line.parent?.remove(line);
-        line.geometry.dispose();
-        mat.dispose();
-      });
+    // ttl covers the full travel + a short hold; the sweep in animate() fades
+    // the last 0.4s and removes it — guaranteed, tween-independent cleanup.
+    const spawnTrail = (from: THREE.Vector3, ttl: number): TrailHandle => {
+      const ctx = state.ctx!;
+      const trail: TrailHandle = {
+        line: makeTrailLine(ctx.root, from),
+        from: from.clone(),
+        bornAt: now(),
+        ttl,
+      };
+      ctx.trails.push(trail);
+      return trail;
     };
 
-    const pulse = (delay: number, dur: number, targets: THREE.Object3D[]) => {
+    const pulse = (delay: number, dur: number, targets: THREE.Object3D[], amp = 1.14) => {
       addTween(delay, dur, linear, (k) => {
-        const s = 1 + Math.abs(Math.sin(k * Math.PI * 2)) * 0.18;
+        const s = 1 + Math.abs(Math.sin(k * Math.PI * 2)) * (amp - 1);
         for (const o of targets) o.scale.setScalar(s);
       });
     };
@@ -480,18 +509,18 @@ function FlowInner({
         const mid = new THREE.Vector3(1.2, p.baseY - 0.5, 0.3);
         const end = new THREE.Vector3(slot.x, slot.y, 0.3);
         const ctrl = new THREE.Vector3(mid.x + 0.6, (mid.y + end.y) / 2 - 0.4, 0.3);
-        const trail = makeTrail(root, from);
+        const trail = spawnTrail(from, 2.3); // travel ends at 1.9s + short hold
         const cAccent = new THREE.Color(ACCENT);
         const cFlag = new THREE.Color(FLAGGED);
         addTween(0, 0.9, easeOut, (k) => {
           p.group.position.lerpVectors(from, mid, k);
-          setTrailEnd(trail, from, p.group.position);
+          setTrailEnd(trail, p.group.position);
         });
         addTween(1.0, 0.9, easeInOut, (k) => {
           bezier(p.group.position, mid, ctrl, end, k);
           p.sphereMat.color.lerpColors(cAccent, cFlag, k);
-          setTrailEnd(trail, from, p.group.position);
-        }, () => fadeTrail(trail));
+          setTrailEnd(trail, p.group.position);
+        });
         pulse(1.95, 0.6, [p.group]);
         return;
       }
@@ -500,11 +529,13 @@ function FlowInner({
       const inv = d.invoice ? ctx.invoiceById.get(d.invoice.InvoiceID) : undefined;
       if (!inv) return;
       const dock = new THREE.Vector3(DOCK_X, inv.baseY, 0.3);
-      const trail = makeTrail(root, from);
+      const trail = spawnTrail(from, 1.5); // travel ends at 0.75s + short hold
+      // Label ducks out as the node departs so it can never cross an invoice card.
+      fadeSprite(p.label, 0, 0.3, 0.15);
       addTween(0, 0.75, easeInOut, (k) => {
         p.group.position.lerpVectors(from, dock, k);
-        setTrailEnd(trail, from, p.group.position);
-      }, () => fadeTrail(trail));
+        setTrailEnd(trail, p.group.position);
+      });
 
       if (d.type === "MATCH" || d.type === "FEE_SPLIT") {
         // Snap on: both pulse teal, paid tick pops on the card.
@@ -514,8 +545,7 @@ function FlowInner({
           inv.edgeMat.color.set(MATCHED);
           inv.edgeMat.opacity = 0.95;
         });
-        fadeSprite(p.label, 0, 0.35, 0.75);
-        pulse(0.78, 0.65, [p.group, inv.group]);
+        pulse(0.78, 0.65, [p.group, inv.group], 1.09);
         popSprite(inv.tick, 0.95);
 
         if (d.type === "FEE_SPLIT" && d.feeAmount) {
@@ -545,10 +575,9 @@ function FlowInner({
       }
 
       // PARTIAL: reaches the invoice, only part-fills it, then drifts to review.
-      // Label ducks out while docked (so it never overlaps the card text) and
-      // returns once the node is in the review lane.
-      fadeSprite(p.label, 0, 0.3, 0.5);
-      fadeSprite(p.label, 1, 0.4, 2.4);
+      // The label (faded out at departure, above) returns only once the node
+      // has fully settled in the review lane — never while near the card.
+      fadeSprite(p.label, 1, 0.4, 2.85);
       const frac = Math.min(d.payment.amount / 100 / (d.invoice?.Total ?? 1), 1);
       addTween(0.85, 0.6, easeInOut, (k) => {
         inv.fill.visible = true;
@@ -611,6 +640,22 @@ function FlowInner({
       }
       const ctx = state.ctx;
       if (ctx) {
+        // Trail sweep: every connector fades over its final 0.4s and is removed
+        // at end-of-life, regardless of what happened to the tween queue.
+        if (ctx.trails.length > 0) {
+          let expired = false;
+          for (const tr of ctx.trails) {
+            const age = t - tr.bornAt;
+            if (age >= tr.ttl) {
+              removeTrail(tr);
+              expired = true;
+            } else if (age > tr.ttl - 0.4) {
+              (tr.line.material as THREE.LineBasicMaterial).opacity =
+                TRAIL_OPACITY * ((tr.ttl - age) / 0.4);
+            }
+          }
+          if (expired) ctx.trails = ctx.trails.filter((tr) => t - tr.bornAt < tr.ttl);
+        }
         // Idle float — payments drift gently until the agent picks them up.
         for (const p of ctx.payments) {
           if (!p.busy) p.group.position.y = p.baseY + Math.sin(t * 1.1 + p.phase) * 0.06;
@@ -632,6 +677,27 @@ function FlowInner({
       sync(); // catch up if a run started before fonts resolved
       animate();
     });
+
+    if (process.env.NODE_ENV !== "production") {
+      // Dev-only inspection hook: lets tests count live connector lines and
+      // project node bounds without reaching into module scope.
+      (window as unknown as Record<string, unknown>).__flowDebug = () => {
+        const lines: string[] = [];
+        scene.traverse((o) => {
+          if ((o as THREE.Line).isLine && o.type === "Line") {
+            const posAttr = (o as THREE.Line).geometry.getAttribute("position");
+            lines.push(
+              `(${posAttr.getX(0).toFixed(1)},${posAttr.getY(0).toFixed(1)})→(${posAttr
+                .getX(1)
+                .toFixed(1)},${posAttr.getY(1).toFixed(1)}) op=${(
+                (o as THREE.Line).material as THREE.LineBasicMaterial
+              ).opacity.toFixed(2)}`
+            );
+          }
+        });
+        return { trailLines: lines, registered: state.ctx?.trails.length ?? 0 };
+      };
+    }
 
     return () => {
       cancelled = true;
