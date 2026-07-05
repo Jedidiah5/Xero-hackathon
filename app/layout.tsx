@@ -17,6 +17,10 @@ export const metadata: Metadata = {
   title: "Ledger — AI reconciliation agent for Xero",
   description:
     "Watches Stripe, matches payments to open Xero invoices, splits fees, flags the mess for review.",
+  icons: {
+    icon: "/ledger_icon.png",
+    apple: "/ledger_icon.png",
+  },
 };
 
 export default function RootLayout({

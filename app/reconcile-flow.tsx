@@ -16,7 +16,9 @@ import type { ReconcileResult } from "@/lib/agent/reconcile";
 
 const TEXT = "#26221b";
 const TEXT_DIM = "#7a7264"; // darker than the old #958e80 — must read on a projector
-const ACCENT = "#c97b24";
+// Incoming/pending is its own semantic colour (Stripe blurple), NOT the gold
+// brand accent — gold sits next to the amber fee tone and blurs at distance.
+const INCOMING = "#635bff";
 const MATCHED = "#0fa36b";
 const FEE = "#f59e0b";
 const FLAGGED = "#e8553a";
@@ -256,7 +258,7 @@ function buildWorld(
 
   // Column headers
   const payHeader = makeLabel(
-    [{ text: "STRIPE — INCOMING", px: 28, color: ACCENT, bold: true }],
+    [{ text: "STRIPE — INCOMING", px: 28, color: INCOMING, bold: true }],
     "left",
     0.9
   );
@@ -279,7 +281,7 @@ function buildWorld(
   const paymentHandles: PaymentHandle[] = payments.map((p, i) => {
     const group = new THREE.Group();
     group.position.set(PAY_X, slotY(i), 0.3);
-    const mat = new THREE.MeshBasicMaterial({ color: ACCENT, transparent: true });
+    const mat = new THREE.MeshBasicMaterial({ color: INCOMING, transparent: true });
     group.add(new THREE.Mesh(sphereGeo, mat));
     const label = makeLabel([
       { text: p.billing_details.name ?? "Unknown sender", px: 36, bold: true, mono: false },
@@ -483,7 +485,7 @@ function FlowInner({
 
       if (d.type === "DUPLICATE") {
         // Recognised (flash) → dissolves in place. Never travels, never writes.
-        const cAccent = new THREE.Color(ACCENT);
+        const cAccent = new THREE.Color(INCOMING);
         const cFlash = new THREE.Color("#26221b");
         addTween(0, 0.55, linear, (k) => {
           p.sphereMat.color.lerpColors(cAccent, cFlash, Math.abs(Math.sin(k * Math.PI * 3)));
@@ -511,7 +513,7 @@ function FlowInner({
         const end = new THREE.Vector3(slot.x, slot.y, 0.3);
         const ctrl = new THREE.Vector3(mid.x + 0.6, (mid.y + end.y) / 2 - 0.4, 0.3);
         const trail = spawnTrail(from, 2.3); // travel ends at 1.9s + short hold
-        const cAccent = new THREE.Color(ACCENT);
+        const cAccent = new THREE.Color(INCOMING);
         const cFlag = new THREE.Color(FLAGGED);
         addTween(0, 0.9, easeOut, (k) => {
           p.group.position.lerpVectors(from, mid, k);
@@ -727,8 +729,8 @@ function FlowInner({
     <section className="hidden md:block">
       <div className="flex items-center justify-between border-b border-[var(--ring)] bg-gradient-to-r from-[#faf8f5] to-white px-5 py-3">
         <div className="flex items-center gap-3">
-          <span className="flex items-center gap-1.5 font-mono text-[10px] font-bold uppercase tracking-widest text-[var(--accent)]">
-            <span className="h-2 w-2 rounded-full bg-[var(--accent)]" />
+          <span className="flex items-center gap-1.5 font-mono text-[10px] font-bold uppercase tracking-widest text-[var(--incoming)]">
+            <span className="h-2 w-2 rounded-full bg-[var(--incoming)]" />
             Stripe
           </span>
           <span className="text-[var(--muted)]">→</span>
@@ -750,7 +752,7 @@ function FlowInner({
           Every node follows the agent&apos;s real decision
         </span>
         <div className="flex flex-wrap gap-x-4 gap-y-1 font-mono text-[11px] text-[var(--muted)]">
-          <LegendDot color={ACCENT} label="incoming" />
+          <LegendDot color={INCOMING} label="incoming" />
           <LegendDot color={MATCHED} label="matched" />
           <LegendDot color="#d97706" label="fee split" />
           <LegendDot color={FLAGGED} label="flagged" />

@@ -12,13 +12,14 @@ const REVEAL_MS = 750;
 
 const INK = "#1c1915";
 const MUTED = "#5f584a";
-const ACCENT = "#c97b24";
+// Gold (--accent) is brand only. Incoming/pending uses Stripe blurple.
+const INCOMING = "#635bff";
 const MATCHED = "#0fa36b";
 const FEE = "#d97706";
 const FLAGGED = "#e8553a";
 
 const AVATAR_PALETTE = [
-  "#c97b24",
+  "#635bff",
   "#0fa36b",
   "#0891b2",
   "#d97706",
@@ -69,6 +70,7 @@ export default function Dashboard({
   const [queueActions, setQueueActions] = useState<Record<number, QueueAction>>({});
   const [running, setRunning] = useState(false);
   const [hasRun, setHasRun] = useState(false);
+  const [runError, setRunError] = useState<string | null>(null);
   const timers = useRef<number[]>([]);
 
   const revealed = useMemo(
@@ -85,7 +87,11 @@ export default function Dashboard({
   );
   const skippedItems = revealed.filter((r) => r.decision.type === "DUPLICATE");
   const reconciled = matchedCount + feeSplitCount;
-  const progress = hasRun ? 100 : running ? Math.round((revealed.length / initialPayments.length) * 100) : 0;
+  const progress = running
+    ? Math.round((revealed.length / initialPayments.length) * 100)
+    : hasRun
+      ? 100
+      : 0;
 
   const paidInvoiceIds = useMemo(
     () =>
@@ -127,6 +133,8 @@ export default function Dashboard({
   const run = async () => {
     if (running) return;
     setRunning(true);
+    setHasRun(false);
+    setRunError(null);
     timers.current.forEach((t) => window.clearTimeout(t));
     timers.current = [];
     setResults(initialPayments.map(() => null));
@@ -161,6 +169,7 @@ export default function Dashboard({
     } catch (err) {
       console.error(err);
       setRunning(false);
+      setRunError(err instanceof Error ? err.message : "Reconcile failed — try again.");
     }
   };
 
@@ -184,20 +193,22 @@ export default function Dashboard({
           <div className="flex flex-wrap items-center gap-3">
             <Link
               href="/connection"
-              className="flex items-center gap-1.5 rounded-full border border-[var(--ring)] bg-white/80 px-3 py-1 font-mono text-[10px] font-bold uppercase tracking-widest text-[var(--muted)] transition-colors hover:border-[#0fa36b] hover:text-[#0fa36b]"
+              className="flex items-center gap-1.5 rounded-full border border-[var(--ring)] bg-white/80 px-3 py-1 font-mono text-[10px] font-bold uppercase tracking-widest text-[var(--muted)] transition-colors hover:border-[var(--accent)] hover:text-[var(--accent)]"
             >
-              <span className="h-2 w-2 rounded-full bg-[#0fa36b]" />
-              Live connection
+              <span
+                className={`h-2 w-2 rounded-full ${mode === "live" ? "bg-[#0fa36b]" : "bg-[var(--muted)]"}`}
+              />
+              {mode === "live" ? "Live connection" : "Check connection"}
             </Link>
-            <IntegrationPill label="Stripe" color="#c97b24" />
+            <IntegrationPill label="Stripe" color={INCOMING} />
             <IntegrationPill label="Xero" color="#13b5ea" />
             {mode === "live" ? (
-              <span className="hidden items-center gap-1.5 rounded-full bg-[#d1fae5] px-3 py-1 font-mono text-[10px] font-bold uppercase tracking-widest text-[#0fa36b] sm:flex">
+              <span className="flex items-center gap-1.5 rounded-full bg-[#d1fae5] px-3 py-1 font-mono text-[10px] font-bold uppercase tracking-widest text-[#0fa36b]">
                 <span className="live-dot h-2 w-2 rounded-full bg-[#0fa36b]" />
                 Live · {orgName ?? "Xero"}
               </span>
             ) : (
-              <span className="hidden rounded-full bg-[var(--accent-soft)] px-3 py-1 font-mono text-[10px] font-bold uppercase tracking-widest text-[var(--accent)] sm:inline">
+              <span className="rounded-full bg-[var(--accent-soft)] px-3 py-1 font-mono text-[10px] font-bold uppercase tracking-widest text-[var(--accent)]">
                 mock mode
               </span>
             )}
@@ -258,6 +269,15 @@ export default function Dashboard({
           )}
         </section>
 
+        {runError && (
+          <div
+            role="alert"
+            className="mb-6 rounded-2xl border border-[#fecaca] bg-gradient-to-br from-[#fff5f5] to-white px-5 py-4 font-mono text-[12px] text-[#b45309]"
+          >
+            Agent run failed — {runError}
+          </div>
+        )}
+
         {/* 3D flow — gradient frame */}
         <div className="gradient-ring mb-8 hidden md:block">
           <div className="gradient-ring-inner">
@@ -275,8 +295,8 @@ export default function Dashboard({
             label="Incoming"
             value={initialPayments.length}
             icon="↓"
-            gradient="from-[var(--accent-soft)] to-white"
-            accent={ACCENT}
+            gradient="from-[var(--incoming-soft)] to-white"
+            accent={INCOMING}
             sub={skippedItems.length > 0 ? `${skippedItems.length} duplicate skipped` : "webhooks today"}
           />
           <StatCard
@@ -351,7 +371,7 @@ export default function Dashboard({
                       </span>
                       <div>
                         {decision === null ? (
-                          <StatusChip label="Pending" color={ACCENT} />
+                          <StatusChip label="Pending" color={INCOMING} />
                         ) : decision.type === "MATCH" ? (
                           <Outcome chip="Matched" color={MATCHED} reason={decision.reason} />
                         ) : decision.type === "FEE_SPLIT" ? (

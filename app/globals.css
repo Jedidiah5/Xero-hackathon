@@ -9,6 +9,9 @@
   --accent: #c97b24;
   --accent-light: #f5c542;
   --accent-soft: #fef3d4;
+  /* Stripe/incoming — separate from gold brand so fee amber doesn't blur at distance */
+  --incoming: #635bff;
+  --incoming-soft: #e8e6ff;
   --matched: #0fa36b;
   --matched-soft: #d1fae5;
   --fee: #d97706;
