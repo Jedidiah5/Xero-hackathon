@@ -75,6 +75,11 @@ interface LabelLine {
 
 const PX_TO_WORLD = 0.0072;
 
+// Compact (portrait/mobile) containers zoom the camera far out to fit the
+// scene width, so labels get a global size boost to stay legible. Set once
+// per mount, before the world is built.
+let TEXT_SCALE = 1;
+
 let fontCache: { mono: string; sans: string } | null = null;
 function fonts() {
   if (!fontCache) {
@@ -90,7 +95,8 @@ function fonts() {
 function makeLabel(
   lines: LabelLine[],
   align: "left" | "center" = "left",
-  opacity = 1
+  opacity = 1,
+  maxWidth?: number // world units — sprite scales down to fit (e.g. card width)
 ): THREE.Sprite {
   const f = fonts();
   const dpr = 2;
@@ -99,7 +105,7 @@ function makeLabel(
   const canvas = document.createElement("canvas");
   const g = canvas.getContext("2d")!;
   const fontFor = (l: LabelLine) =>
-    `${l.bold ? 700 : 400} ${l.px}px ${l.mono === false ? f.sans : f.mono}`;
+    `${l.bold ? 700 : 400} ${Math.round(l.px * TEXT_SCALE)}px ${l.mono === false ? f.sans : f.mono}`;
 
   let maxW = 0;
   for (const l of lines) {
@@ -108,7 +114,7 @@ function makeLabel(
   }
   const cssW = Math.ceil(maxW + pad * 2);
   const cssH = Math.ceil(
-    lines.reduce((a, l) => a + l.px * 1.25, 0) + gap * (lines.length - 1) + pad * 2
+    lines.reduce((a, l) => a + l.px * TEXT_SCALE * 1.25, 0) + gap * (lines.length - 1) + pad * 2
   );
   canvas.width = cssW * dpr;
   canvas.height = cssH * dpr;
@@ -120,7 +126,7 @@ function makeLabel(
     g.fillStyle = l.color ?? TEXT;
     const x = align === "center" ? (cssW - g.measureText(l.text).width) / 2 : pad;
     g.fillText(l.text, x, y);
-    y += l.px * 1.25 + gap;
+    y += l.px * TEXT_SCALE * 1.25 + gap;
   }
 
   const tex = new THREE.CanvasTexture(canvas);
@@ -129,6 +135,11 @@ function makeLabel(
   const mat = new THREE.SpriteMaterial({ map: tex, transparent: true, opacity, depthTest: false });
   const sprite = new THREE.Sprite(mat);
   sprite.scale.set(cssW * PX_TO_WORLD, cssH * PX_TO_WORLD, 1);
+  if (maxWidth && sprite.scale.x > maxWidth) {
+    // Shrink proportionally so long text (live-org contact names) fits its card.
+    const k = maxWidth / sprite.scale.x;
+    sprite.scale.multiplyScalar(k);
+  }
   if (align === "left") sprite.center.set(0, 0.5);
   sprite.renderOrder = 10;
   sprite.userData.baseScale = sprite.scale.clone();
@@ -314,7 +325,9 @@ function buildWorld(
         { text: `${inv.InvoiceNumber} · ${gbpPounds(inv.Total)}`, px: 32, bold: true },
         { text: inv.Contact.Name, px: 26, color: TEXT_DIM, mono: false },
       ],
-      "center"
+      "center",
+      1,
+      CARD_W - 0.2
     );
     label.position.z = 0.2;
     group.add(label);
@@ -395,6 +408,11 @@ function FlowInner({
     renderer.domElement.style.position = "absolute";
     renderer.domElement.style.inset = "0";
     container.appendChild(renderer.domElement);
+
+    // Narrow containers fit the scene by width, which shrinks everything —
+    // boost label sizes so the flow stays readable on phones/tablets.
+    const w0 = container.clientWidth || 1;
+    TEXT_SCALE = w0 < 500 ? 1.5 : w0 < 900 ? 1.15 : 1;
 
     const scene = new THREE.Scene();
     const camera = new THREE.PerspectiveCamera(FOV, 2, 0.1, 100);
@@ -726,7 +744,7 @@ function FlowInner({
   const running = results.some((r) => r !== null);
 
   return (
-    <section className="hidden md:block">
+    <section className="block">
       <div className="flex items-center justify-between border-b border-[var(--ring)] bg-gradient-to-r from-[#faf8f5] to-white px-5 py-3">
         <div className="flex items-center gap-3">
           <span className="flex items-center gap-1.5 font-mono text-[10px] font-bold uppercase tracking-widest text-[var(--incoming)]">
@@ -745,7 +763,7 @@ function FlowInner({
       </div>
       <div
         ref={containerRef}
-        className="relative h-[58vh] max-h-[580px] min-h-[420px] w-full overflow-hidden bg-gradient-to-b from-[#faf8f5] to-white"
+        className="relative aspect-[16/10] min-h-[220px] w-full overflow-hidden bg-gradient-to-b from-[#faf8f5] to-white md:aspect-auto md:h-[58vh] md:max-h-[580px] md:min-h-[420px]"
       />
       <div className="flex flex-wrap items-center justify-between gap-3 border-t border-[var(--ring)] bg-[#faf8f5]/80 px-5 py-2.5">
         <span className="font-mono text-[10px] uppercase tracking-widest text-[var(--muted)]">

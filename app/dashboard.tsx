@@ -279,7 +279,7 @@ export default function Dashboard({
         )}
 
         {/* 3D flow — gradient frame */}
-        <div className="gradient-ring mb-8 hidden md:block">
+        <div className="gradient-ring mb-8 block">
           <div className="gradient-ring-inner">
             <ReconcileFlow
               payments={initialPayments}
