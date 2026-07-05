@@ -9,11 +9,21 @@ processing fee so the books balance, and flagging what it can't confidently reso
 (partial payments, unknown senders, duplicate webhooks) into a human review queue.
 
 **Dev platform:** Claude Code.
-**Status:** Stage 5 — LIVE Xero connection established. `LiveXeroProvider` talks to the
-Xero MCP server (`https://builders.xero.com/beta/mcp`, OAuth 2.0 PKCE, Demo Company (UK)
-org) behind the same `XeroProvider` interface as the mock; the demo runs on either via
-`XERO_MODE=mock|live`. All six demo outcomes resolve: match, fee split, partial, no-match,
-duplicate-skip + review queue, with the Three.js flow hero on top.
+**Status:** COMPLETE — the demo runs fully LIVE against Xero. `LiveXeroProvider` talks to
+the Xero MCP server (`https://builders.xero.com/beta/mcp`, OAuth 2.0 PKCE, Demo Company
+(UK) org) behind the same `XeroProvider` interface as the mock (`XERO_MODE=mock|live`).
+In live mode the six-payment scenario is derived from the org's REAL open invoices and the
+writes are real: verified run marked 3 genuine invoices PAID (org open-invoice count
+14 → 11) and booked a real £7.45 spend-money fee — all visible inside Xero afterwards.
+Mock mode (default) runs the scripted Northwind/Brightside narrative for offline safety.
+
+### Demo-day runbook
+- Default demo: `npm run dev` → localhost:3000 → landing → Run the demo (mock, replayable).
+- Live demo: refresh the token first (`claude mcp list` inside the project — access tokens
+  last ~30 min), set `XERO_MODE=live` in `.env.local`, restart. Each live run settles real
+  invoices, so it self-refreshes: the next run picks the next open invoices. Fall back:
+  set `XERO_MODE=mock`, restart.
+- /connection is the "is it really connected?" tab — live org data, read-only.
 
 ## 1. How did the project use the Xero API?
 Core workflow: reconciliation. The agent pulls open ACCREC invoices and contacts into a

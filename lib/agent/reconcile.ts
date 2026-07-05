@@ -1,4 +1,5 @@
 import type { XeroProvider } from "../xero/provider";
+import type { BankTransaction } from "../xero/types";
 import type { StripeCharge } from "../stripe/types";
 import type { Decision } from "./decision";
 import { IdempotencyStore } from "./idempotency";
@@ -7,6 +8,8 @@ import { findExactMatch, findPartialMatch, penceToPounds } from "./match";
 export interface ReconcileResult {
   payment: StripeCharge;
   decision: Decision;
+  /** The spend-money write this decision produced (FEE_SPLIT only) — evidence for the UI. */
+  bankTransaction?: BankTransaction;
 }
 
 const gbp = (pounds: number) =>
@@ -72,9 +75,10 @@ export async function reconcileAll(
       openInvoices.splice(openInvoices.indexOf(exact.invoice), 1);
 
       if (fee > 0) {
-        await xero.createFeeExpense(exact.invoice.Contact.Name, fee, payment.id);
+        const bankTransaction = await xero.createFeeExpense(exact.invoice.Contact.Name, fee, payment.id);
         results.push({
           payment,
+          bankTransaction,
           decision: {
             type: "FEE_SPLIT",
             payment,

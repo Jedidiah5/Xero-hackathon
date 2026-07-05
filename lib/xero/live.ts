@@ -262,10 +262,16 @@ export class LiveXeroProvider implements XeroProvider {
     const expense = await this.feeExpenseAccount();
     const bank = await this.bankAccount();
     const description = `Stripe processing fee — ${contactName}${reference ? ` · ${reference}` : ""}`;
+    // bankAccountCode + lineItems[].taxType are required by the tool schema.
+    // Stripe fees are VAT-exempt financial services in the UK → NONE.
     const res = await this.call("create_bank_transaction", {
       type: "SPEND",
       contactId: this.feeContactId,
-      lineItems: [{ description, quantity: 1, unitAmount: amount, accountCode: expense.Code }],
+      bankAccountCode: bank.Code,
+      lineItems: [
+        { description, quantity: 1, unitAmount: amount, accountCode: expense.Code, taxType: "NONE" },
+      ],
+      reference: reference ?? null,
     });
     const raw = JSON.stringify(parseTool(res, "create_bank_transaction"));
     const btId = /"bankTransactionID"\s*:\s*"([^"]+)"/i.exec(raw)?.[1] ?? `live-bt-${Date.now()}`;

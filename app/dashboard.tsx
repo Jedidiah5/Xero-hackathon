@@ -53,9 +53,13 @@ function avatarColor(name: string | null) {
 export default function Dashboard({
   initialPayments,
   initialInvoices,
+  mode = "mock",
+  orgName = null,
 }: {
   initialPayments: StripeCharge[];
   initialInvoices: Invoice[];
+  mode?: string;
+  orgName?: string | null;
 }) {
   const [results, setResults] = useState<(ReconcileResult | null)[]>(() =>
     initialPayments.map(() => null)
@@ -107,6 +111,18 @@ export default function Dashboard({
     (bt) => bt.Reference && revealedFeeSplitChargeIds.has(bt.Reference)
   );
 
+  // The 3D flow shows at most six invoices: the scenario's targets first,
+  // then decoys. In live mode the org can hold many more open invoices —
+  // the full list still renders in the invoice grid below.
+  const flowInvoices = useMemo(() => {
+    const refs = new Set(
+      initialPayments.map((p) => p.metadata.invoice_number).filter(Boolean)
+    );
+    const targets = initialInvoices.filter((inv) => refs.has(inv.InvoiceNumber));
+    const decoys = initialInvoices.filter((inv) => !refs.has(inv.InvoiceNumber));
+    return [...targets, ...decoys].slice(0, 6);
+  }, [initialPayments, initialInvoices]);
+
   const run = async () => {
     if (running) return;
     setRunning(true);
@@ -117,7 +133,11 @@ export default function Dashboard({
     setQueueActions({});
 
     try {
-      const res = await fetch("/api/reconcile", { method: "POST" });
+      const res = await fetch("/api/reconcile", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ payments: initialPayments }),
+      });
       if (!res.ok) throw new Error(`Reconcile failed: ${res.status}`);
       const data: { results: ReconcileResult[]; bankTransactions: BankTransaction[] } =
         await res.json();
@@ -172,9 +192,16 @@ export default function Dashboard({
             </Link>
             <IntegrationPill label="Stripe" color="#635bff" />
             <IntegrationPill label="Xero" color="#13b5ea" />
-            <span className="hidden rounded-full bg-[var(--accent-soft)] px-3 py-1 font-mono text-[10px] font-bold uppercase tracking-widest text-[#6c4df6] sm:inline">
-              mock mode
-            </span>
+            {mode === "live" ? (
+              <span className="hidden items-center gap-1.5 rounded-full bg-[#d1fae5] px-3 py-1 font-mono text-[10px] font-bold uppercase tracking-widest text-[#0fa36b] sm:flex">
+                <span className="live-dot h-2 w-2 rounded-full bg-[#0fa36b]" />
+                Live · {orgName ?? "Xero"}
+              </span>
+            ) : (
+              <span className="hidden rounded-full bg-[var(--accent-soft)] px-3 py-1 font-mono text-[10px] font-bold uppercase tracking-widest text-[#6c4df6] sm:inline">
+                mock mode
+              </span>
+            )}
             {running && (
               <span className="flex items-center gap-2 rounded-full bg-[#ede9fe] px-3 py-1 font-mono text-[10px] font-bold uppercase tracking-widest text-[#6c4df6]">
                 <span className="live-dot h-2 w-2 rounded-full bg-[#6c4df6]" />
@@ -237,7 +264,7 @@ export default function Dashboard({
           <div className="gradient-ring-inner">
             <ReconcileFlow
               payments={initialPayments}
-              invoices={initialInvoices}
+              invoices={flowInvoices}
               results={results}
             />
           </div>
