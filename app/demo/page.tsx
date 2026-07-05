@@ -38,7 +38,7 @@ export default async function DemoPage() {
           Remove <code>XERO_MODE=live</code> from .env.local and restart to fall back to the
           mock demo — it is always available.
         </p>
-        <Link href="/" className="mt-6 inline-block font-mono text-sm font-bold text-[#6c4df6] underline">
+        <Link href="/" className="mt-6 inline-block font-mono text-sm font-bold text-[var(--accent)] underline">
           ← back to landing
         </Link>
       </div>

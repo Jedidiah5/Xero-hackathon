@@ -16,7 +16,7 @@ import type { ReconcileResult } from "@/lib/agent/reconcile";
 
 const TEXT = "#26221b";
 const TEXT_DIM = "#7a7264"; // darker than the old #958e80 — must read on a projector
-const ACCENT = "#6c4df6";
+const ACCENT = "#c97b24";
 const MATCHED = "#0fa36b";
 const FEE = "#f59e0b";
 const FLAGGED = "#e8553a";
@@ -727,8 +727,8 @@ function FlowInner({
     <section className="hidden md:block">
       <div className="flex items-center justify-between border-b border-[var(--ring)] bg-gradient-to-r from-[#faf8f5] to-white px-5 py-3">
         <div className="flex items-center gap-3">
-          <span className="flex items-center gap-1.5 font-mono text-[10px] font-bold uppercase tracking-widest text-[#635bff]">
-            <span className="h-2 w-2 rounded-full bg-[#635bff]" />
+          <span className="flex items-center gap-1.5 font-mono text-[10px] font-bold uppercase tracking-widest text-[var(--accent)]">
+            <span className="h-2 w-2 rounded-full bg-[var(--accent)]" />
             Stripe
           </span>
           <span className="text-[var(--muted)]">→</span>

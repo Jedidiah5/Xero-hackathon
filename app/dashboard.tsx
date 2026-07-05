@@ -6,18 +6,19 @@ import type { BankTransaction, Invoice } from "@/lib/xero/types";
 import type { StripeCharge } from "@/lib/stripe/types";
 import type { ReconcileResult } from "@/lib/agent/reconcile";
 import ReconcileFlow from "./reconcile-flow";
+import { LedgerMark } from "./ledger-logo";
 
 const REVEAL_MS = 750;
 
 const INK = "#1c1915";
 const MUTED = "#5f584a";
-const ACCENT = "#6c4df6";
+const ACCENT = "#c97b24";
 const MATCHED = "#0fa36b";
 const FEE = "#d97706";
 const FLAGGED = "#e8553a";
 
 const AVATAR_PALETTE = [
-  "#6c4df6",
+  "#c97b24",
   "#0fa36b",
   "#0891b2",
   "#d97706",
@@ -169,12 +170,10 @@ export default function Dashboard({
       <header className="sticky top-0 z-40 border-b border-[var(--ring)] glass-panel">
         <div className="mx-auto flex max-w-7xl flex-wrap items-center justify-between gap-4 px-6 py-3">
           <Link href="/" className="flex items-center gap-3">
-            <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-gradient-to-br from-[#6c4df6] to-[#8b5cf6] text-lg font-bold text-white shadow-[0_4px_14px_rgba(108,77,246,0.4)]">
-              L
-            </div>
+            <LedgerMark className="h-10 w-10" />
             <div>
               <div className="font-sans text-lg font-bold tracking-tight">
-                Ledger<span className="text-[#6c4df6]">.</span>
+                Ledger<span className="text-[var(--accent)]">.</span>
               </div>
               <div className="font-mono text-[10px] uppercase tracking-widest text-[var(--muted)]">
                 Stripe → Xero agent
@@ -190,7 +189,7 @@ export default function Dashboard({
               <span className="h-2 w-2 rounded-full bg-[#0fa36b]" />
               Live connection
             </Link>
-            <IntegrationPill label="Stripe" color="#635bff" />
+            <IntegrationPill label="Stripe" color="#c97b24" />
             <IntegrationPill label="Xero" color="#13b5ea" />
             {mode === "live" ? (
               <span className="hidden items-center gap-1.5 rounded-full bg-[#d1fae5] px-3 py-1 font-mono text-[10px] font-bold uppercase tracking-widest text-[#0fa36b] sm:flex">
@@ -198,20 +197,20 @@ export default function Dashboard({
                 Live · {orgName ?? "Xero"}
               </span>
             ) : (
-              <span className="hidden rounded-full bg-[var(--accent-soft)] px-3 py-1 font-mono text-[10px] font-bold uppercase tracking-widest text-[#6c4df6] sm:inline">
+              <span className="hidden rounded-full bg-[var(--accent-soft)] px-3 py-1 font-mono text-[10px] font-bold uppercase tracking-widest text-[var(--accent)] sm:inline">
                 mock mode
               </span>
             )}
             {running && (
-              <span className="flex items-center gap-2 rounded-full bg-[#ede9fe] px-3 py-1 font-mono text-[10px] font-bold uppercase tracking-widest text-[#6c4df6]">
-                <span className="live-dot h-2 w-2 rounded-full bg-[#6c4df6]" />
+              <span className="flex items-center gap-2 rounded-full bg-[var(--accent-soft)] px-3 py-1 font-mono text-[10px] font-bold uppercase tracking-widest text-[var(--accent)]">
+                <span className="live-dot h-2 w-2 rounded-full bg-[var(--accent)]" />
                 Agent running
               </span>
             )}
             <button
               onClick={run}
               disabled={running}
-              className="group relative overflow-hidden rounded-xl bg-gradient-to-r from-[#6c4df6] to-[#7c3aed] px-6 py-2.5 font-mono text-xs font-bold uppercase tracking-widest text-white shadow-[0_4px_20px_rgba(108,77,246,0.4)] transition-all hover:-translate-y-0.5 hover:shadow-[0_8px_28px_rgba(108,77,246,0.5)] disabled:translate-y-0 disabled:opacity-50 disabled:shadow-none"
+              className="group relative overflow-hidden rounded-xl bg-gradient-to-r from-[var(--accent)] to-[#a8681e] px-6 py-2.5 font-mono text-xs font-bold uppercase tracking-widest text-white shadow-[0_4px_20px_rgba(201,123,36,0.4)] transition-all hover:-translate-y-0.5 hover:shadow-[0_8px_28px_rgba(201,123,36,0.5)] disabled:translate-y-0 disabled:opacity-50 disabled:shadow-none"
             >
               <span className="relative z-10">
                 {running ? "Running…" : hasRun ? "↺ Replay" : "▶ Run agent"}
@@ -226,7 +225,7 @@ export default function Dashboard({
         {/* Hero intro */}
         <section className="mb-8 flex flex-col gap-6 lg:flex-row lg:items-end lg:justify-between">
           <div className="max-w-2xl">
-            <p className="font-mono text-xs font-bold uppercase tracking-[0.2em] text-[#6c4df6]">
+            <p className="font-mono text-xs font-bold uppercase tracking-[0.2em] text-[var(--accent)]">
               AI reconciliation
             </p>
             <h1 className="mt-2 font-sans text-3xl font-bold leading-tight tracking-tight md:text-4xl">
@@ -244,11 +243,11 @@ export default function Dashboard({
             <div className="glass-panel w-full max-w-xs rounded-2xl p-4 lg:w-72">
               <div className="flex items-center justify-between font-mono text-[10px] uppercase tracking-widest text-[var(--muted)]">
                 <span>Run progress</span>
-                <span className="font-bold text-[#6c4df6]">{progress}%</span>
+                <span className="font-bold text-[var(--accent)]">{progress}%</span>
               </div>
-              <div className="mt-2 h-2 overflow-hidden rounded-full bg-[#ede9fe]">
+              <div className="mt-2 h-2 overflow-hidden rounded-full bg-[var(--accent-soft)]">
                 <div
-                  className="h-full rounded-full bg-gradient-to-r from-[#6c4df6] to-[#0fa36b] transition-all duration-500 ease-out"
+                  className="h-full rounded-full bg-gradient-to-r from-[var(--accent)] to-[#0fa36b] transition-all duration-500 ease-out"
                   style={{ width: `${progress}%` }}
                 />
               </div>
@@ -276,7 +275,7 @@ export default function Dashboard({
             label="Incoming"
             value={initialPayments.length}
             icon="↓"
-            gradient="from-[#ede9fe] to-white"
+            gradient="from-[var(--accent-soft)] to-white"
             accent={ACCENT}
             sub={skippedItems.length > 0 ? `${skippedItems.length} duplicate skipped` : "webhooks today"}
           />
@@ -423,7 +422,7 @@ export default function Dashboard({
                           </p>
                           <div className="mt-4 flex gap-2">
                             {acted ? (
-                              <span className="rounded-xl bg-[#ede9fe] px-4 py-2 font-mono text-[10px] font-bold uppercase tracking-widest text-[#6c4df6]">
+                              <span className="rounded-xl bg-[var(--accent-soft)] px-4 py-2 font-mono text-[10px] font-bold uppercase tracking-widest text-[var(--accent)]">
                                 {acted === "approved" ? "Approved ✓" : "Reassigned →"}
                               </span>
                             ) : (
@@ -771,8 +770,8 @@ function QueueButton({
       onClick={onClick}
       className={
         primary
-          ? "rounded-xl bg-[#6c4df6] px-4 py-2 font-mono text-[10px] font-bold uppercase tracking-widest text-white shadow-[0_4px_12px_rgba(108,77,246,0.35)] transition-all hover:bg-[#5a3ded]"
-          : "rounded-xl border border-[var(--ring)] bg-white px-4 py-2 font-mono text-[10px] font-bold uppercase tracking-widest transition-all hover:border-[#6c4df6] hover:text-[#6c4df6]"
+          ? "rounded-xl bg-[var(--accent)] px-4 py-2 font-mono text-[10px] font-bold uppercase tracking-widest text-white shadow-[0_4px_12px_rgba(201,123,36,0.35)] transition-all hover:bg-[#a8681e]"
+          : "rounded-xl border border-[var(--ring)] bg-white px-4 py-2 font-mono text-[10px] font-bold uppercase tracking-widest transition-all hover:border-[var(--accent)] hover:text-[var(--accent)]"
       }
     >
       {label}

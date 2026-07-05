@@ -1,13 +1,14 @@
 @import "tailwindcss";
 
-/* Light, happy palette — warm cream + white cards + cheerful violet accent */
+/* Light, happy palette — warm cream + white cards + gold-brown accent (ledger icon) */
 :root {
   --background: #f4f0e8;
   --surface: #ffffff;
   --foreground: #1c1915;
   --muted: #5f584a; /* darker secondary — must survive a projector */
-  --accent: #6c4df6;
-  --accent-soft: #ede9fe;
+  --accent: #c97b24;
+  --accent-light: #f5c542;
+  --accent-soft: #fef3d4;
   --matched: #0fa36b;
   --matched-soft: #d1fae5;
   --fee: #d97706;
@@ -17,7 +18,7 @@
   --ring: rgba(28, 25, 21, 0.08);
   --shadow-sm: 0 1px 2px rgba(28, 25, 21, 0.04), 0 4px 16px rgba(28, 25, 21, 0.06);
   --shadow-md: 0 4px 6px rgba(28, 25, 21, 0.04), 0 12px 40px rgba(28, 25, 21, 0.08);
-  --shadow-lg: 0 8px 24px rgba(28, 25, 21, 0.06), 0 24px 64px rgba(108, 77, 246, 0.1);
+  --shadow-lg: 0 8px 24px rgba(28, 25, 21, 0.06), 0 24px 64px rgba(201, 123, 36, 0.1);
 }
 
 @theme inline {
@@ -43,7 +44,7 @@ body {
   position: relative;
   isolation: isolate;
   background:
-    radial-gradient(ellipse 80% 50% at 10% -10%, rgba(108, 77, 246, 0.14), transparent 55%),
+    radial-gradient(ellipse 80% 50% at 10% -10%, rgba(201, 123, 36, 0.14), transparent 55%),
     radial-gradient(ellipse 60% 40% at 95% 5%, rgba(15, 163, 107, 0.12), transparent 50%),
     radial-gradient(ellipse 50% 35% at 70% 100%, rgba(217, 119, 6, 0.1), transparent 45%),
     var(--background);
@@ -74,7 +75,7 @@ body {
   border-radius: 1.5rem;
   background: linear-gradient(
     135deg,
-    rgba(108, 77, 246, 0.45),
+    rgba(201, 123, 36, 0.45),
     rgba(15, 163, 107, 0.35),
     rgba(217, 119, 6, 0.3)
   );

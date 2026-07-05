@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { LedgerMark } from "./ledger-logo";
 
 // Landing — sets up the pitch before the demo. Two clicks max to anything.
 
@@ -26,23 +27,21 @@ export default function Landing() {
       {/* Top bar */}
       <header className="mx-auto flex w-full max-w-6xl items-center justify-between px-6 py-5">
         <div className="flex items-center gap-3">
-          <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-gradient-to-br from-[#6c4df6] to-[#8b5cf6] font-bold text-white shadow-[0_4px_14px_rgba(108,77,246,0.4)]">
-            L
-          </div>
+          <LedgerMark />
           <span className="font-sans text-lg font-bold tracking-tight">
-            Ledger<span className="text-[#6c4df6]">.</span>
+            Ledger<span className="text-[var(--accent)]">.</span>
           </span>
         </div>
         <nav className="flex items-center gap-2">
           <Link
             href="/connection"
-            className="rounded-xl border border-[var(--ring)] bg-white/80 px-4 py-2 font-mono text-[11px] font-bold uppercase tracking-widest text-[var(--muted)] transition-colors hover:border-[#6c4df6] hover:text-[#6c4df6]"
+            className="rounded-xl border border-[var(--ring)] bg-white/80 px-4 py-2 font-mono text-[11px] font-bold uppercase tracking-widest text-[var(--muted)] transition-colors hover:border-[var(--accent)] hover:text-[var(--accent)]"
           >
             Live connection
           </Link>
           <Link
             href="/demo"
-            className="rounded-xl bg-gradient-to-r from-[#6c4df6] to-[#7c3aed] px-5 py-2 font-mono text-[11px] font-bold uppercase tracking-widest text-white shadow-[0_4px_20px_rgba(108,77,246,0.4)] transition-all hover:-translate-y-0.5"
+            className="rounded-xl bg-gradient-to-r from-[var(--accent)] to-[#a8681e] px-5 py-2 font-mono text-[11px] font-bold uppercase tracking-widest text-white shadow-[0_4px_20px_rgba(201,123,36,0.4)] transition-all hover:-translate-y-0.5"
           >
             ▶ Demo
           </Link>
@@ -51,7 +50,7 @@ export default function Landing() {
 
       {/* Hero */}
       <main className="mx-auto flex w-full max-w-6xl flex-1 flex-col justify-center px-6 py-16">
-        <p className="font-mono text-xs font-bold uppercase tracking-[0.25em] text-[#6c4df6]">
+        <p className="font-mono text-xs font-bold uppercase tracking-[0.25em] text-[var(--accent)]">
           Stripe → Xero · agent layer
         </p>
         <h1 className="mt-4 max-w-4xl font-sans text-5xl font-bold leading-[1.05] tracking-tight md:text-7xl">
@@ -67,7 +66,7 @@ export default function Landing() {
         <div className="mt-10 flex flex-wrap items-center gap-4">
           <Link
             href="/demo"
-            className="rounded-xl bg-gradient-to-r from-[#6c4df6] to-[#7c3aed] px-8 py-4 font-mono text-sm font-bold uppercase tracking-widest text-white shadow-[0_8px_28px_rgba(108,77,246,0.45)] transition-all hover:-translate-y-0.5 hover:shadow-[0_12px_36px_rgba(108,77,246,0.55)]"
+            className="rounded-xl bg-gradient-to-r from-[var(--accent)] to-[#a8681e] px-8 py-4 font-mono text-sm font-bold uppercase tracking-widest text-white shadow-[0_8px_28px_rgba(201,123,36,0.45)] transition-all hover:-translate-y-0.5 hover:shadow-[0_12px_36px_rgba(201,123,36,0.55)]"
           >
             ▶ Run the demo
           </Link>
