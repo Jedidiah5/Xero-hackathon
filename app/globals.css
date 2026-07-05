@@ -121,3 +121,44 @@ body {
 .animate-in {
   animation: slide-up 0.45s ease-out both;
 }
+
+.pillar-tilt-scene {
+  perspective: 1100px;
+  perspective-origin: 50% 50%;
+}
+
+.pillar-card {
+  position: relative;
+  overflow: hidden;
+  border-radius: 1rem;
+  padding: 1.5rem;
+  background: rgba(255, 255, 255, 0.78);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  border: 1px solid rgba(255, 255, 255, 0.92);
+  box-shadow: var(--shadow-md);
+  cursor: default;
+  will-change: transform;
+  transform-style: preserve-3d;
+  backface-visibility: hidden;
+}
+
+.pillar-card:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 3px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .pillar-tilt-scene {
+    perspective: none;
+  }
+
+  .pillar-card {
+    transition: box-shadow 0.2s ease !important;
+    transform: none !important;
+  }
+
+  .animate-in {
+    animation: none;
+  }
+}
